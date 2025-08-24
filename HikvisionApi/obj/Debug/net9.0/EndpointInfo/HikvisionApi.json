@@ -1,0 +1,22 @@
+{
+  "openapi": "3.0.4",
+  "info": {
+    "title": "HikvisionApi",
+    "version": "1.0"
+  },
+  "paths": {
+    "/anpr": {
+      "post": {
+        "tags": [
+          "HikvisionApi"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    }
+  },
+  "components": { }
+}

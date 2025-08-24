@@ -1,0 +1,6 @@
+@HikvisionApi_HostAddress = http://localhost:5214
+
+GET {{HikvisionApi_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

@@ -1,0 +1,16 @@
+E:\OneDrive\Escritorio\ProyectosC#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\HikvisionApi.exe
+E:\OneDrive\Escritorio\ProyectosC#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\appsettings.Development.json
+E:\OneDrive\Escritorio\ProyectosC#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\appsettings.json
+E:\OneDrive\Escritorio\ProyectosC#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\HikvisionApi.dll
+E:\OneDrive\Escritorio\ProyectosC#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\HikvisionApi.deps.json
+E:\OneDrive\Escritorio\ProyectosC#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\HikvisionApi.runtimeconfig.json
+E:\OneDrive\Escritorio\ProyectosC#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\HikvisionApi.pdb
+E:\OneDrive\Escritorio\ProyectosC#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\Microsoft.AspNetCore.OpenApi.dll
+E:\OneDrive\Escritorio\ProyectosC#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\Microsoft.OpenApi.dll
+E:\OneDrive\Escritorio\ProyectosC#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\Microsoft.Win32.SystemEvents.dll
+E:\OneDrive\Escritorio\ProyectosC#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\Swashbuckle.AspNetCore.Swagger.dll
+E:\OneDrive\Escritorio\ProyectosC#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\Swashbuckle.AspNetCore.SwaggerGen.dll
+E:\OneDrive\Escritorio\ProyectosC#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\Swashbuckle.AspNetCore.SwaggerUI.dll
+E:\OneDrive\Escritorio\ProyectosC#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\System.Drawing.Common.dll
+E:\OneDrive\Escritorio\ProyectosC#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\System.Private.Windows.Core.dll
+E:\OneDrive\Escritorio\ProyectosC#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\runtimes\win\lib\net9.0\Microsoft.Win32.SystemEvents.dll
