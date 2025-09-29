@@ -1,32 +1,60 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
+using HikvisionApi.Config;
+using HikvisionApi.Models;
 
 namespace HikvisionApi.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/anpr")]
+    [Tags("HikvisionApi")] // 👈 Forzamos que Swagger use el mismo tag que el POST /anpr
     public class AnprController : ControllerBase
     {
-        private readonly string _savePath = @"C:\ANPR";
+        private readonly string _savePath;
 
-        [HttpPost("upload")]
-        public async Task<IActionResult> Upload(IFormFile file)
+        public AnprController(IOptions<AnprSettings> settings)
         {
-            if (file == null || file.Length == 0)
-                return BadRequest("No se recibió ninguna imagen.");
+            _savePath = settings.Value.TargetFolder;
+        }
 
+        // 🔹 GET /api/anpr/capturas
+        [HttpGet("capturas")]
+        public IActionResult GetCapturas()
+        {
             if (!Directory.Exists(_savePath))
-            {
-                Directory.CreateDirectory(_savePath);
-            }
+                return Ok(new List<CapturaDto>());
 
-            string filePath = Path.Combine(_savePath, file.FileName);
+            var files = Directory.GetFiles(_savePath, "*.jpg", SearchOption.AllDirectories);
 
-            using (var stream = new FileStream(filePath, FileMode.Create))
-            {
-                await file.CopyToAsync(stream);
-            }
+            var capturas = files
+                .Select(file =>
+                {
+                    var fileName = Path.GetFileNameWithoutExtension(file);
+                    // Ejemplo: 20250925165706970_KGB015_1
+                    var parts = fileName.Split('_');
+                    if (parts.Length < 3) return null;
 
-            return Ok(new { message = "Imagen guardada correctamente", path = filePath });
+                    string absTime = parts[0];
+                    string placa = parts[1];
+                    string lane = parts[2];
+
+                    // Convertir ruta absoluta en URL relativa (/anpr/...)
+                    string relativePath = file.Replace(_savePath, "").Replace("\\", "/");
+
+                    return new CapturaDto
+                    {
+                        AbsTime = absTime,
+                        Placa = placa,
+                        Lane = lane,
+                        ImageUrl = "/anpr" + relativePath
+                    };
+                })
+                .Where(x => x != null)
+                .OrderByDescending(x => x!.AbsTime)
+                .ToList();
+
+            return Ok(capturas);
         }
     }
 }
+

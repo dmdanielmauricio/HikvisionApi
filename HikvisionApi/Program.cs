@@ -1,23 +1,47 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using Microsoft.OpenApi.Models;
+﻿using Microsoft.OpenApi.Models;
 using System.Xml.Linq;
 using System.Drawing;
 using System.Drawing.Imaging;
+using HikvisionApi.Config;
+using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Configuración fuerte tipada
+builder.Services.Configure<AnprSettings>(builder.Configuration.GetSection("AnprSettings"));
+
+// Registrar controladores
+builder.Services.AddControllers();
+
 // Swagger
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "ANPR API",  // 👈 Igual que producción
+        Version = "v1"
+    });
+});
 
 var app = builder.Build();
 
 app.UseSwagger();
-app.UseSwaggerUI();
+app.UseSwaggerUI(c =>
+{
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "ANPR API v1");
+});
 
-string targetFolder = @"C:\ANPR";
-string rawFolder = Path.Combine(targetFolder, "raw");
-string logFolder = Path.Combine(targetFolder, "logs");
+// 🔹 Habilitar archivos estáticos (sirve imágenes desde C:\ANPR en /anpr/…)
+var settings = app.Services.GetRequiredService<IOptions<AnprSettings>>().Value;
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(settings.TargetFolder),
+    RequestPath = "/anpr"
+});
+
+// 🔹 Mapear controladores (GET /api/anpr/capturas)
+app.MapControllers();
 
 // Método auxiliar para guardar logs
 static void WriteLog(string message, string logFolder)
@@ -27,8 +51,13 @@ static void WriteLog(string message, string logFolder)
     File.AppendAllText(logFile, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}{Environment.NewLine}");
 }
 
-app.MapPost("/anpr", async (HttpRequest request) =>
+// 🔹 Endpoint principal POST /anpr
+app.MapPost("/anpr", async (HttpRequest request, IOptions<AnprSettings> settings) =>
 {
+    string targetFolder = settings.Value.TargetFolder;
+    string rawFolder = Path.Combine(targetFolder, "raw");
+    string logFolder = Path.Combine(targetFolder, "logs");
+
     Directory.CreateDirectory(rawFolder);
     Directory.CreateDirectory(logFolder);
 
@@ -52,7 +81,6 @@ app.MapPost("/anpr", async (HttpRequest request) =>
             foreach (var field in form)
                 WriteLog($"Campo: {field.Key} = {field.Value}", logFolder);
 
-            // Guardar todos los archivos en raw
             foreach (var file in form.Files)
             {
                 WriteLog($"Archivo: {file.Name} - {file.FileName} ({file.Length} bytes)", logFolder);
@@ -63,9 +91,9 @@ app.MapPost("/anpr", async (HttpRequest request) =>
 
                 WriteLog($"✅ Guardado en {rawPath}", logFolder);
 
-                if (file.FileName.EndsWith(".xml")) xmlPath = rawPath;
-                if (file.FileName.Contains("licensePlatePicture")) licensePlatePicPath = rawPath;
-                if (file.FileName.Contains("detectionPicture")) detectionPicPath = rawPath;
+                if (file.Name == "metadata") xmlPath = rawPath;
+                if (file.Name == "licensePlatePicture") licensePlatePicPath = rawPath;
+                if (file.Name == "detectionPicture") detectionPicPath = rawPath;
             }
 
             // Leer XML
@@ -84,49 +112,55 @@ app.MapPost("/anpr", async (HttpRequest request) =>
                 if (laneElement != null) lane = laneElement.Value;
             }
 
-            // Crear carpetas específicas por cámara
-            string camRecortadaFolder = Path.Combine(targetFolder, $"Camara{lane}");
-            string camGeneralFolder = Path.Combine(targetFolder, $"CamaraX{lane}");
+            // Fecha actual en formato yyyyMMdd
+            string fecha = DateTime.Now.ToString("yyyyMMdd");
 
-            Directory.CreateDirectory(camRecortadaFolder);
-            Directory.CreateDirectory(camGeneralFolder);
+            // Asegurar que la raíz (C:\ANPR) exista
+            Directory.CreateDirectory(targetFolder);
+
+            // Crear estructura base para todas las cámaras (1 a 4 por ejemplo)
+            for (int i = 1; i <= 4; i++)
+            {
+                Directory.CreateDirectory(Path.Combine(targetFolder, $"Camara{i}", fecha));
+                Directory.CreateDirectory(Path.Combine(targetFolder, $"Camara{i}X", fecha));
+            }
 
             string finalFileName = $"{absTime}_{placaReconocida}_{lane}.jpg";
 
-            // Imagen recortada con placa
+            // 🔹 Imagen recortada (placa) → Camara#
             if (licensePlatePicPath != null && placaReconocida != "DESCONOCIDA")
             {
-                string finalFilePath = Path.Combine(camRecortadaFolder, finalFileName);
+                string finalFilePath = Path.Combine(
+                    Path.Combine(targetFolder, $"Camara{lane}", fecha),
+                    finalFileName
+                );
 
                 using (var bmp = new Bitmap(licensePlatePicPath))
                 using (var g = Graphics.FromImage(bmp))
                 {
-                    var font = new Font("Arial", 20, FontStyle.Bold);
-                    var brush = new SolidBrush(Color.Red);
-
-                    g.DrawString(placaReconocida, font, brush, new PointF(5, 5));
+                   
                     bmp.Save(finalFilePath, ImageFormat.Jpeg);
                 }
 
-                WriteLog($"🖼️ Imagen recortada con placa guardada en {finalFilePath}", logFolder);
+                WriteLog($"🖼️ Imagen RECORTADA guardada en {finalFilePath}", logFolder);
             }
 
-            // Imagen general con placa
+            // 🔹 Imagen general → Camara#X
             if (detectionPicPath != null && placaReconocida != "DESCONOCIDA")
             {
-                string generalFilePath = Path.Combine(camGeneralFolder, finalFileName);
+                string generalFilePath = Path.Combine(
+                    Path.Combine(targetFolder, $"Camara{lane}X", fecha),
+                    finalFileName
+                );
 
                 using (var bmp = new Bitmap(detectionPicPath))
                 using (var g = Graphics.FromImage(bmp))
                 {
-                    var font = new Font("Arial", 30, FontStyle.Bold);
-                    var brush = new SolidBrush(Color.Red);
-
-                    g.DrawString(placaReconocida, font, brush, new PointF(10, 10));
-                    bmp.Save(generalFilePath, ImageFormat.Jpeg);
+                   
+                   bmp.Save(generalFilePath, ImageFormat.Jpeg);
                 }
 
-                WriteLog($"🖼️ Imagen general con placa guardada en {generalFilePath}", logFolder);
+                WriteLog($"🖼️ Imagen GENERAL guardada en {generalFilePath}", logFolder);
             }
         }
         else
@@ -144,4 +178,3 @@ app.MapPost("/anpr", async (HttpRequest request) =>
 .DisableAntiforgery();
 
 app.Run("http://0.0.0.0:5000");
-

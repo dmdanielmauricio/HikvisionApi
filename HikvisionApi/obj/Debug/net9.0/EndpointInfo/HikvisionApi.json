@@ -1,12 +1,24 @@
 {
   "openapi": "3.0.4",
   "info": {
-    "title": "HikvisionApi",
-    "version": "1.0"
+    "title": "ANPR API",
+    "version": "v1"
   },
   "paths": {
     "/anpr": {
       "post": {
+        "tags": [
+          "HikvisionApi"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/anpr/capturas": {
+      "get": {
         "tags": [
           "HikvisionApi"
         ],

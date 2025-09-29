@@ -1,10 +1,14 @@
 {
   "Version": 1,
-  "WorkspaceRootPath": "E:\\OneDrive\\Escritorio\\ProyectosC#\\HikvisionApi\\",
+  "WorkspaceRootPath": "D:\\Proyectos_C#\\HikvisionApi\\",
   "Documents": [
     {
-      "AbsoluteMoniker": "D:0:0:{17C25E67-A71B-43E4-85B2-8F9EE5963FE2}|HikvisionApi\\HikvisionApi.csproj|e:\\onedrive\\escritorio\\proyectosc#\\hikvisionapi\\hikvisionapi\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "AbsoluteMoniker": "D:0:0:{17C25E67-A71B-43E4-85B2-8F9EE5963FE2}|HikvisionApi\\HikvisionApi.csproj|d:\\proyectos_c#\\hikvisionapi\\hikvisionapi\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{17C25E67-A71B-43E4-85B2-8F9EE5963FE2}|HikvisionApi\\HikvisionApi.csproj|solutionrelative:hikvisionapi\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{17C25E67-A71B-43E4-85B2-8F9EE5963FE2}|HikvisionApi\\HikvisionApi.csproj|d:\\proyectos_c#\\hikvisionapi\\hikvisionapi\\controllers\\anprcontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{17C25E67-A71B-43E4-85B2-8F9EE5963FE2}|HikvisionApi\\HikvisionApi.csproj|solutionrelative:hikvisionapi\\controllers\\anprcontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     }
   ],
   "DocumentGroupContainers": [
@@ -14,32 +18,32 @@
       "DocumentGroups": [
         {
           "DockedWidth": 200,
-          "SelectedChildIndex": 3,
+          "SelectedChildIndex": 0,
           "Children": [
-            {
-              "$type": "Bookmark",
-              "Name": "ST:0:0:{b1e99781-ab81-11d0-b683-00aa00a3ee26}"
-            },
-            {
-              "$type": "Bookmark",
-              "Name": "ST:128:0:{1fc202d4-d401-403c-9834-5b218574bb67}"
-            },
-            {
-              "$type": "Bookmark",
-              "Name": "ST:0:0:{1c4feeaa-4718-4aa9-859d-94ce25d182ba}"
-            },
             {
               "$type": "Document",
               "DocumentIndex": 0,
               "Title": "Program.cs",
-              "DocumentMoniker": "E:\\OneDrive\\Escritorio\\ProyectosC#\\HikvisionApi\\HikvisionApi\\Program.cs",
+              "DocumentMoniker": "D:\\Proyectos_C#\\HikvisionApi\\HikvisionApi\\Program.cs",
               "RelativeDocumentMoniker": "HikvisionApi\\Program.cs",
-              "ToolTip": "E:\\OneDrive\\Escritorio\\ProyectosC#\\HikvisionApi\\HikvisionApi\\Program.cs",
+              "ToolTip": "D:\\Proyectos_C#\\HikvisionApi\\HikvisionApi\\Program.cs",
               "RelativeToolTip": "HikvisionApi\\Program.cs",
-              "ViewState": "AgIAAHoAAAAAAAAAAAAIwJIAAAAAAAAAAAAAAA==",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAIwAAAATAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-08-23T23:23:26.551Z",
+              "WhenOpened": "2025-09-29T13:58:57.988Z",
               "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "AnprController.cs",
+              "DocumentMoniker": "D:\\Proyectos_C#\\HikvisionApi\\HikvisionApi\\Controllers\\AnprController.cs",
+              "RelativeDocumentMoniker": "HikvisionApi\\Controllers\\AnprController.cs",
+              "ToolTip": "D:\\Proyectos_C#\\HikvisionApi\\HikvisionApi\\Controllers\\AnprController.cs",
+              "RelativeToolTip": "HikvisionApi\\Controllers\\AnprController.cs",
+              "ViewState": "AgIAAAMAAAAAAAAAAAAAAAgAAAAXAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-09-29T13:17:45.939Z"
             }
           ]
         }
