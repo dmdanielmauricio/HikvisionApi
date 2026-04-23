@@ -1,0 +1,16 @@
+D:\Proyectos_C#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\HikvisionApi.exe
+D:\Proyectos_C#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\appsettings.Development.json
+D:\Proyectos_C#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\appsettings.json
+D:\Proyectos_C#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\HikvisionApi.dll
+D:\Proyectos_C#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\HikvisionApi.deps.json
+D:\Proyectos_C#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\HikvisionApi.runtimeconfig.json
+D:\Proyectos_C#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\HikvisionApi.pdb
+D:\Proyectos_C#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\Microsoft.AspNetCore.OpenApi.dll
+D:\Proyectos_C#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\Microsoft.OpenApi.dll
+D:\Proyectos_C#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\Microsoft.Win32.SystemEvents.dll
+D:\Proyectos_C#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\Swashbuckle.AspNetCore.Swagger.dll
+D:\Proyectos_C#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\Swashbuckle.AspNetCore.SwaggerGen.dll
+D:\Proyectos_C#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\Swashbuckle.AspNetCore.SwaggerUI.dll
+D:\Proyectos_C#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\System.Drawing.Common.dll
+D:\Proyectos_C#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\System.Private.Windows.Core.dll
+D:\Proyectos_C#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\runtimes\win\lib\net9.0\Microsoft.Win32.SystemEvents.dll

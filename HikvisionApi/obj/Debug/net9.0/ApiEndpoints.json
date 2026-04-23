@@ -1,19 +1,13 @@
 [
   {
-    "ContainingType": "Program\u002B\u003C\u003Ec",
-    "Method": "\u003C\u003CMain\u003E$\u003Eb__0_3",
-    "RelativePath": "anpr",
+    "ContainingType": "HikvisionApi.Controllers.AnprController",
+    "Method": "RecibirAnpr",
+    "RelativePath": "api/anpr",
     "HttpMethod": "POST",
-    "IsController": false,
+    "IsController": true,
     "Order": 0,
     "Parameters": [],
-    "ReturnTypes": [
-      {
-        "Type": "System.Void",
-        "MediaTypes": [],
-        "StatusCode": 200
-      }
-    ]
+    "ReturnTypes": []
   },
   {
     "ContainingType": "HikvisionApi.Controllers.AnprController",
@@ -23,9 +17,6 @@
     "IsController": true,
     "Order": 0,
     "Parameters": [],
-    "ReturnTypes": [],
-    "Tags": [
-      "HikvisionApi"
-    ]
+    "ReturnTypes": []
   }
 ]

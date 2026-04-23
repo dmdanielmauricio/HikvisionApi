@@ -6,5 +6,7 @@
         public string Placa { get; set; } = string.Empty;
         public string Lane { get; set; } = string.Empty;
         public string ImageUrl { get; set; } = string.Empty;
+
+        public string ImagenGeneralUrl { get; set; }
     }
 }

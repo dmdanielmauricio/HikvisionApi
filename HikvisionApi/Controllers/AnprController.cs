@@ -1,23 +1,104 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Options;
-using HikvisionApi.Config;
+﻿using HikvisionApi.Config;
 using HikvisionApi.Models;
+using HikvisionApi.Services;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
+using System.Text;
+using System.Xml.Linq;
 
 namespace HikvisionApi.Controllers
 {
     [ApiController]
     [Route("api/anpr")]
-    [Tags("HikvisionApi")] // 👈 Forzamos que Swagger use el mismo tag que el POST /anpr
     public class AnprController : ControllerBase
     {
         private readonly string _savePath;
+        private readonly HikvisionService _hikvisionService;
 
-        public AnprController(IOptions<AnprSettings> settings)
+        public AnprController(
+            IOptions<AnprSettings> settings,
+            HikvisionService hikvisionService)
         {
             _savePath = settings.Value.TargetFolder;
+            _hikvisionService = hikvisionService;
         }
 
-        // 🔹 GET /api/anpr/capturas
+        [HttpPost]
+        public async Task<IActionResult> RecibirAnpr()
+        {
+            string placa = "DESCONOCIDA";
+            string lane = "0";
+            string absTime = DateTime.Now.ToString("yyyyMMddHHmmssfff");
+
+            IFormFile? plateImage = null;
+            IFormFile? fullImage = null;
+
+            if (!Request.HasFormContentType)
+                return BadRequest("No es multipart/form-data");
+
+            // ✅ LEER FORM UNA SOLA VEZ
+            var form = await Request.ReadFormAsync();
+
+            // ✅ GUARDAR RAW + LOG (YA NO usa Request)
+            await _hikvisionService.GuardarRaw(
+                form,
+                Request.ContentType ?? "",
+                Request.Method
+            );
+
+            // 🔍 PROCESAR ARCHIVOS
+            foreach (var file in form.Files)
+            {
+                var fileName = file.FileName.ToLower();
+
+                // 📸 identificar imágenes
+                if (fileName.Contains("licenseplate"))
+                {
+                    plateImage = file;
+                }
+                else if (fileName.Contains("detection"))
+                {
+                    fullImage = file;
+                }
+                // 📄 XML metadata
+                else if (fileName.Contains(".xml") || file.Name == "metadata")
+                {
+                    using var stream = file.OpenReadStream();
+                    var xml = XDocument.Load(stream);
+
+                    XNamespace ns = "http://www.isapi.org/ver20/XMLSchema";
+
+                    placa = xml.Descendants(ns + "licensePlate")
+                               .FirstOrDefault()?.Value ?? "DESCONOCIDA";
+
+                    lane = xml.Descendants(ns + "line")
+                              .FirstOrDefault()?.Value ?? "0";
+
+                    absTime = xml.Descendants(ns + "absTime")
+                                 .FirstOrDefault()?.Value
+                                 ?? DateTime.Now.ToString("yyyyMMddHHmmssfff");
+                }
+            }
+
+            // 🧠 NORMALIZAR
+            placa = placa.ToUpper().Trim();
+            lane = lane.Trim();
+
+            Console.WriteLine($"📥 {placa} - carril {lane} - {absTime}");
+
+            // 🔥 PROCESAR (guardar imágenes + BD + abrir barrera)
+            await _hikvisionService.ProcesarAcceso(
+                placa,
+                lane,
+                absTime,
+                plateImage,
+                fullImage
+            );
+
+            return Ok(new { placa, lane });
+        }
+
+
         [HttpGet("capturas")]
         public IActionResult GetCapturas()
         {
@@ -26,35 +107,24 @@ namespace HikvisionApi.Controllers
 
             var files = Directory.GetFiles(_savePath, "*.jpg", SearchOption.AllDirectories);
 
-            var capturas = files
-                .Select(file =>
+            var capturas = files.Select(file =>
+            {
+                var parts = Path.GetFileNameWithoutExtension(file).Split('_');
+                if (parts.Length < 3) return null;
+
+                return new CapturaDto
                 {
-                    var fileName = Path.GetFileNameWithoutExtension(file);
-                    // Ejemplo: 20250925165706970_KGB015_1
-                    var parts = fileName.Split('_');
-                    if (parts.Length < 3) return null;
-
-                    string absTime = parts[0];
-                    string placa = parts[1];
-                    string lane = parts[2];
-
-                    // Convertir ruta absoluta en URL relativa (/anpr/...)
-                    string relativePath = file.Replace(_savePath, "").Replace("\\", "/");
-
-                    return new CapturaDto
-                    {
-                        AbsTime = absTime,
-                        Placa = placa,
-                        Lane = lane,
-                        ImageUrl = "/anpr" + relativePath
-                    };
-                })
-                .Where(x => x != null)
-                .OrderByDescending(x => x!.AbsTime)
-                .ToList();
+                    AbsTime = parts[0],
+                    Placa = parts[1],
+                    Lane = parts[2],
+                    ImageUrl = "/anpr" + file.Replace(_savePath, "").Replace("\\", "/")
+                };
+            })
+            .Where(x => x != null)
+            .OrderByDescending(x => x!.AbsTime)
+            .ToList();
 
             return Ok(capturas);
         }
     }
 }
-

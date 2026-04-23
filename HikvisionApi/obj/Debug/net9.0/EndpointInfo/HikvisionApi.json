@@ -5,10 +5,10 @@
     "version": "v1"
   },
   "paths": {
-    "/anpr": {
+    "/api/anpr": {
       "post": {
         "tags": [
-          "HikvisionApi"
+          "Anpr"
         ],
         "responses": {
           "200": {
@@ -20,7 +20,7 @@
     "/api/anpr/capturas": {
       "get": {
         "tags": [
-          "HikvisionApi"
+          "Anpr"
         ],
         "responses": {
           "200": {
