@@ -2,53 +2,61 @@
 using HikvisionApi.Data;
 using HikvisionApi.Services;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
-using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 🔹 Configuración
+// =============================================
+// BASE DE DATOS LOCAL
+// =============================================
+var connStr = builder.Configuration.GetConnectionString("DefaultConnection");
+builder.Services.AddDbContext<AppDbContext>(opts =>
+{
+    if (!string.IsNullOrWhiteSpace(connStr))
+        opts.UseSqlServer(connStr);
+    else
+        opts.UseSqlServer(
+            "Server=localhost;Database=PorteriaDB_Empty;Trusted_Connection=True;TrustServerCertificate=True;");
+});
+
+// =============================================
+// CONFIGURACIONES
+// =============================================
 builder.Services.Configure<AnprSettings>(
     builder.Configuration.GetSection("AnprSettings"));
-
 builder.Services.Configure<BarrierSettings>(
     builder.Configuration.GetSection("BarrierSettings"));
+builder.Services.Configure<ParkSkySettings>(
+    builder.Configuration.GetSection("ParkSkySettings"));
+builder.Services.Configure<PorteriaSettings>(
+    builder.Configuration.GetSection("Porteria"));
+builder.Services.Configure<ParqueaderoSettings>(
+    builder.Configuration.GetSection("Parqueadero"));
+builder.Services.Configure<ImpresorasSettings>(
+    builder.Configuration.GetSection("Impresoras"));
 
-// 🔹 DB
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
-
-// 🔹 Servicios
+// =============================================
+// SERVICIOS
+// =============================================
+builder.Services.AddHttpClient<ParkSkyClient>();
 builder.Services.AddScoped<HikvisionService>();
-
-// 🔹 Controllers
+builder.Services.AddSingleton<PrintService>();
 builder.Services.AddControllers();
 
-// 🔹 Swagger
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(c =>
-{
-    c.SwaggerDoc("v1", new OpenApiInfo
-    {
-        Title = "ANPR API",
-        Version = "v1"
-    });
-});
+builder.WebHost.ConfigureKestrel(opts =>
+    opts.Limits.MaxRequestBodySize = 50 * 1024 * 1024);
 
 var app = builder.Build();
 
-app.UseSwagger();
-app.UseSwaggerUI();
-
-// 🔹 Archivos estáticos
-var anprSettings = app.Services.GetRequiredService<IOptions<AnprSettings>>().Value;
-
-app.UseStaticFiles(new StaticFileOptions
+var anprFolder = builder.Configuration["AnprSettings:TargetFolder"] ?? "D:\\ANPR";
+if (Directory.Exists(anprFolder))
 {
-    FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(anprSettings.TargetFolder),
-    RequestPath = "/anpr"
-});
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(anprFolder),
+        RequestPath = "/anpr"
+    });
+}
 
+app.UseRouting();
 app.MapControllers();
-
 app.Run();

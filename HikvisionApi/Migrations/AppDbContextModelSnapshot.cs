@@ -61,6 +61,102 @@ namespace HikvisionApi.Migrations
                     b.ToTable("AccesosVehiculares");
                 });
 
+            modelBuilder.Entity("HikvisionApi.Models.ConvenioLocal", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Activo")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime>("FechaFin")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("FechaInicio")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("NombreConvenio")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Convenios");
+                });
+
+            modelBuilder.Entity("HikvisionApi.Models.ConvenioVehiculoLocal", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Activo")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("ConvenioId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ConvenioMensualidadId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Placa")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ConvenioMensualidadId");
+
+                    b.ToTable("ConveniosVehiculos");
+                });
+
+            modelBuilder.Entity("HikvisionApi.Models.RegistroLocal", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Activo")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Carril")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("ConvenioId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("EsMensualidad")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime>("FechaEntrada")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("FechaSalida")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Placa")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("TipoVehiculo")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal?>("ValorPagado")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Registros");
+                });
+
             modelBuilder.Entity("HikvisionApi.Models.Vehiculo", b =>
                 {
                     b.Property<int>("Id")
@@ -79,6 +175,22 @@ namespace HikvisionApi.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("Vehiculos");
+                });
+
+            modelBuilder.Entity("HikvisionApi.Models.ConvenioVehiculoLocal", b =>
+                {
+                    b.HasOne("HikvisionApi.Models.ConvenioLocal", "ConvenioMensualidad")
+                        .WithMany("Vehiculos")
+                        .HasForeignKey("ConvenioMensualidadId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ConvenioMensualidad");
+                });
+
+            modelBuilder.Entity("HikvisionApi.Models.ConvenioLocal", b =>
+                {
+                    b.Navigation("Vehiculos");
                 });
 #pragma warning restore 612, 618
         }
