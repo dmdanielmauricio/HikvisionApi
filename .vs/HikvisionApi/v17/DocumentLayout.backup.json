@@ -3,8 +3,20 @@
   "WorkspaceRootPath": "D:\\Proyectos_C#\\HikvisionApi\\",
   "Documents": [
     {
+      "AbsoluteMoniker": "D:0:0:{17C25E67-A71B-43E4-85B2-8F9EE5963FE2}|HikvisionApi\\HikvisionApi.csproj|d:\\proyectos_c#\\hikvisionapi\\hikvisionapi\\services\\parkskyclient.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{17C25E67-A71B-43E4-85B2-8F9EE5963FE2}|HikvisionApi\\HikvisionApi.csproj|solutionrelative:hikvisionapi\\services\\parkskyclient.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{17C25E67-A71B-43E4-85B2-8F9EE5963FE2}|HikvisionApi\\HikvisionApi.csproj|d:\\proyectos_c#\\hikvisionapi\\hikvisionapi\\services\\hikvisionservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{17C25E67-A71B-43E4-85B2-8F9EE5963FE2}|HikvisionApi\\HikvisionApi.csproj|solutionrelative:hikvisionapi\\services\\hikvisionservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
       "AbsoluteMoniker": "D:0:0:{17C25E67-A71B-43E4-85B2-8F9EE5963FE2}|HikvisionApi\\HikvisionApi.csproj|d:\\proyectos_c#\\hikvisionapi\\hikvisionapi\\appsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}",
       "RelativeMoniker": "D:0:0:{17C25E67-A71B-43E4-85B2-8F9EE5963FE2}|HikvisionApi\\HikvisionApi.csproj|solutionrelative:hikvisionapi\\appsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{17C25E67-A71B-43E4-85B2-8F9EE5963FE2}|HikvisionApi\\HikvisionApi.csproj|d:\\proyectos_c#\\hikvisionapi\\hikvisionapi\\config\\anprsettings.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{17C25E67-A71B-43E4-85B2-8F9EE5963FE2}|HikvisionApi\\HikvisionApi.csproj|solutionrelative:hikvisionapi\\config\\anprsettings.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     }
   ],
   "DocumentGroupContainers": [
@@ -14,8 +26,21 @@
       "DocumentGroups": [
         {
           "DockedWidth": 200,
-          "SelectedChildIndex": 2,
+          "SelectedChildIndex": 0,
           "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "ParkSkyClient.cs",
+              "DocumentMoniker": "D:\\Proyectos_C#\\HikvisionApi\\HikvisionApi\\Services\\ParkSkyClient.cs",
+              "RelativeDocumentMoniker": "HikvisionApi\\Services\\ParkSkyClient.cs",
+              "ToolTip": "D:\\Proyectos_C#\\HikvisionApi\\HikvisionApi\\Services\\ParkSkyClient.cs",
+              "RelativeToolTip": "HikvisionApi\\Services\\ParkSkyClient.cs",
+              "ViewState": "AgIAAJIAAAAAAAAAAAAuwMAAAAABAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-06-09T18:50:55.174Z",
+              "EditorCaption": ""
+            },
             {
               "$type": "Bookmark",
               "Name": "ST:128:0:{116d2292-e37d-41cd-a077-ebacac4c8cc4}"
@@ -26,15 +51,41 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 0,
+              "DocumentIndex": 1,
+              "Title": "HikvisionService.cs",
+              "DocumentMoniker": "D:\\Proyectos_C#\\HikvisionApi\\HikvisionApi\\Services\\HikvisionService.cs",
+              "RelativeDocumentMoniker": "HikvisionApi\\Services\\HikvisionService.cs",
+              "ToolTip": "D:\\Proyectos_C#\\HikvisionApi\\HikvisionApi\\Services\\HikvisionService.cs",
+              "RelativeToolTip": "HikvisionApi\\Services\\HikvisionService.cs",
+              "ViewState": "AgIAADUCAAAAAAAAAAAAAGMCAAABAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-06-09T18:29:34.62Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "AnprSettings.cs",
+              "DocumentMoniker": "D:\\Proyectos_C#\\HikvisionApi\\HikvisionApi\\Config\\AnprSettings.cs",
+              "RelativeDocumentMoniker": "HikvisionApi\\Config\\AnprSettings.cs",
+              "ToolTip": "D:\\Proyectos_C#\\HikvisionApi\\HikvisionApi\\Config\\AnprSettings.cs",
+              "RelativeToolTip": "HikvisionApi\\Config\\AnprSettings.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAsAAAABAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-06-09T18:29:16.316Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
               "Title": "appsettings.json",
               "DocumentMoniker": "D:\\Proyectos_C#\\HikvisionApi\\HikvisionApi\\appsettings.json",
               "RelativeDocumentMoniker": "HikvisionApi\\appsettings.json",
               "ToolTip": "D:\\Proyectos_C#\\HikvisionApi\\HikvisionApi\\appsettings.json",
               "RelativeToolTip": "HikvisionApi\\appsettings.json",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAADIAAAAAAAAAAAAAAA==",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAA8AAAADAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001642|",
-              "WhenOpened": "2026-06-07T03:51:18.916Z",
+              "WhenOpened": "2026-06-09T18:28:00.978Z",
               "EditorCaption": ""
             }
           ]

@@ -224,11 +224,14 @@ namespace HikvisionApi.Services
             string placa, string lane, string imagenUrl,
             string carrilNombre, string impresora)
         {
+            // Detectar tipo de vehículo por patrón de placa
+            var tipoVehiculo = DetectarTipoVehiculo(placa);
+
             if (_parqueadero.AbrirTodo)
             {
                 try
                 {
-                    await _parkSky.RegistrarIngresoAsync(placa, lane, carrilNombre, false, null, imagenUrl);
+                    await _parkSky.RegistrarIngresoAsync(placa, lane, carrilNombre, false, null, imagenUrl, tipoVehiculo);
                 }
                 catch { /* sin internet — igual abre */ }
 
@@ -244,7 +247,7 @@ namespace HikvisionApi.Services
                 if (conv.TieneConvenio && conv.Activo)
                 {
                     await _parkSky.RegistrarIngresoAsync(placa, lane, carrilNombre,
-                        true, conv.ConvenioId, imagenUrl);
+                        true, conv.ConvenioId, imagenUrl, tipoVehiculo);
                     await RegistrarAccesoLocal(placa, lane, "ENTRADA", true,
                         "CONVENIO_ACTIVO", "CONVENIO", imagenUrl);
                     await EjecutarApertura(lane, "ENTRADA");
@@ -253,7 +256,7 @@ namespace HikvisionApi.Services
                 {
                     // Convenio vencido → tarifa normal
                     await _parkSky.RegistrarIngresoAsync(placa, lane, carrilNombre,
-                        false, null, imagenUrl);
+                        false, null, imagenUrl, tipoVehiculo);
                     await RegistrarAccesoLocal(placa, lane, "ENTRADA", true,
                         "CONVENIO_VENCIDO", "CASUAL", imagenUrl);
 
@@ -267,7 +270,7 @@ namespace HikvisionApi.Services
                 {
                     // Sin convenio — casual
                     var ingresoCs = await _parkSky.RegistrarIngresoAsync(placa, lane, carrilNombre,
-                        false, null, imagenUrl);
+                        false, null, imagenUrl, tipoVehiculo);
                     await RegistrarAccesoLocal(placa, lane, "ENTRADA", true,
                         "SIN_CONVENIO", "CASUAL", imagenUrl);
 
@@ -321,16 +324,20 @@ namespace HikvisionApi.Services
                 return;
             }
 
-            // Verificar pago (ValorPagado > 0 y Activo = false en registro reciente)
+            // Verificar pago con tiempo de gracia
+            var limiteGracia = DateTime.Now.AddMinutes(-_parqueadero.TiempoGraciaMinutos);
             var registro = await _db.Registros
                 .OrderByDescending(r => r.FechaEntrada)
                 .FirstOrDefaultAsync(r => r.Placa == placa && !r.Activo
                     && r.ValorPagado > 0
                     && r.FechaSalida.HasValue
-                    && r.FechaSalida.Value >= DateTime.Today);
+                    && r.FechaSalida.Value >= limiteGracia);
 
             if (registro != null)
             {
+                _logger.LogInformation(
+                    "✅ Salida autorizada (pagó hace {Min} min): {Placa}",
+                    (int)(DateTime.Now - registro.FechaSalida!.Value).TotalMinutes, placa);
                 await RegistrarAccesoLocal(placa, lane, "SALIDA", true,
                     "PAGADO", "CASUAL", imagenUrl);
                 await EjecutarApertura(lane, "SALIDA");
@@ -339,7 +346,7 @@ namespace HikvisionApi.Services
             {
                 await RegistrarAccesoLocal(placa, lane, "SALIDA", false,
                     "NO_PAGADO", "BLOQUEADO", imagenUrl);
-                _logger.LogWarning("⛔ Salida bloqueada (sin pago local): {Placa}", placa);
+                _logger.LogWarning("⛔ Salida bloqueada (sin pago o gracia vencida): {Placa}", placa);
             }
         }
 
@@ -479,7 +486,12 @@ namespace HikvisionApi.Services
                 await fullImage.CopyToAsync(s);
             }
 
-            return $"/anpr/Camara{lane}/{fecha}/{nombre}";
+            // URL absoluta apuntando a la API local — no al VPS
+            var baseUrl = _anpr.BaseUrl?.TrimEnd('/');
+            var rutaRelativa = $"/anpr/Camara{lane}/{fecha}/{nombre}";
+            return string.IsNullOrEmpty(baseUrl)
+                ? rutaRelativa
+                : $"{baseUrl}{rutaRelativa}";
         }
 
         private async Task RegistrarAccesoLocal(
@@ -557,9 +569,25 @@ namespace HikvisionApi.Services
             _logger.LogInformation("Salida local registrada: {Placa}", placa);
         }
 
-        private static string DetectarTipoVehiculo(string placa)
+        private string DetectarTipoVehiculo(string placa)
         {
-            // Moto Colombia: AA000A (2 letras, 3 números, 1 letra)
+            // Consultar patrones activos en la BD
+            var patrones = _db?.PatronPlacas?
+                .Where(p => p.Activo)
+                .Include(p => p.Tarifa)
+                .ToList();
+
+            if (patrones != null)
+            {
+                foreach (var p in patrones)
+                {
+                    if (CoincidePatronLocal(placa, p.Patron))
+                        return p.Tarifa?.TipoVehiculo ?? p.Nombre ?? "Carro";
+                }
+            }
+
+            // Fallback: lógica por longitud si no hay patrones configurados
+            // Moto Colombia: AA000A (2 letras + 3 números + 1 letra = 6 chars)
             if (placa.Length == 6 &&
                 char.IsLetter(placa[0]) && char.IsLetter(placa[1]) &&
                 char.IsDigit(placa[2]) && char.IsDigit(placa[3]) &&
@@ -567,6 +595,18 @@ namespace HikvisionApi.Services
                 return "Moto";
 
             return "Carro";
+        }
+
+        /// Misma lógica que ControlController.CoincidePatron
+        private static bool CoincidePatronLocal(string placa, string patron)
+        {
+            if (placa.Length != patron.Length) return false;
+            for (int i = 0; i < patron.Length; i++)
+            {
+                if (patron[i] == 'A' && !char.IsLetter(placa[i])) return false;
+                if (patron[i] == '#' && !char.IsDigit(placa[i])) return false;
+            }
+            return true;
         }
     }
 }

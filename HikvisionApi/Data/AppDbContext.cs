@@ -16,5 +16,9 @@ namespace HikvisionApi.Data
         public DbSet<RegistroLocal> Registros { get; set; }
         public DbSet<ConvenioLocal> Convenios { get; set; }
         public DbSet<ConvenioVehiculoLocal> ConveniosVehiculos { get; set; }
+
+        // Patrones de placa y tarifas (compartidos con ParkSky)
+        public DbSet<PatronPlacaLocal> PatronPlacas { get; set; }
+        public DbSet<TarifaLocal> Tarifas { get; set; }
     }
 }

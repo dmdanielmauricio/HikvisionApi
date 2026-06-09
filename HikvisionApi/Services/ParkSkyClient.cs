@@ -52,7 +52,8 @@ namespace HikvisionApi.Services
         // =============================================
         public async Task<IngresoResponse> RegistrarIngresoAsync(
             string placa, string carril, string carrilNombre,
-            bool esMensualidad, int? convenioId, string? imagenUrl)
+            bool esMensualidad, int? convenioId, string? imagenUrl,
+            string? tipoVehiculo = null)
         {
             try
             {
@@ -63,7 +64,8 @@ namespace HikvisionApi.Services
                     carrilNombre,
                     esMensualidad,
                     convenioId,
-                    imagenUrl
+                    imagenUrl,
+                    tipoVehiculo
                 });
                 var r = await _http.PostAsync("api/hikvision/ingreso",
                     new StringContent(body, Encoding.UTF8, "application/json"));
@@ -86,10 +88,12 @@ namespace HikvisionApi.Services
         {
             try
             {
+                var gracia = _settings.TiempoGraciaMinutos;
                 var url = $"api/hikvision/validar-salida?placa={Uri.EscapeDataString(placa)}" +
                            $"&carril={carril}" +
                            $"&imagenUrl={Uri.EscapeDataString(imagenUrl ?? "")}" +
-                           $"&carrilNombre={Uri.EscapeDataString(carrilNombre ?? "")}";
+                           $"&carrilNombre={Uri.EscapeDataString(carrilNombre ?? "")}" +
+                           $"&tiempoGraciaMinutos={gracia}";
                 var r = await _http.GetAsync(url);
                 var json = await r.Content.ReadAsStringAsync();
                 _logger.LogInformation("ValidarSalida {Placa}: {Json}", placa, json);
