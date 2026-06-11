@@ -487,7 +487,12 @@ namespace HikvisionApi.Services
             try
             {
                 var gracia = _parqueadero.TiempoGraciaMinutos;
-                var url = $"api/hikvision/salida-rapida?placa={Uri.EscapeDataString(placa)}&gracia={gracia}";
+                var url = $"api/hikvision/salida-rapida" +
+                             $"?placa={Uri.EscapeDataString(placa)}" +
+                             $"&gracia={gracia}" +
+                             $"&carril={Uri.EscapeDataString(lane)}" +
+                             $"&carrilNombre={Uri.EscapeDataString(carrilNombre)}" +
+                             $"&imagenUrl={Uri.EscapeDataString(imagenUrl ?? "")}";
                 var r = await _parkSky.GetRawAsync(url);
 
                 using var doc = System.Text.Json.JsonDocument.Parse(r);

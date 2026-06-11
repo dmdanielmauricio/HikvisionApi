@@ -24,6 +24,7 @@ D:\Proyectos_C#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\Microsof
 D:\Proyectos_C#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\Microsoft.OpenApi.dll
 D:\Proyectos_C#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\Microsoft.SqlServer.Server.dll
 D:\Proyectos_C#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\Microsoft.Win32.SystemEvents.dll
+D:\Proyectos_C#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\QRCoder.dll
 D:\Proyectos_C#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\Swashbuckle.AspNetCore.Swagger.dll
 D:\Proyectos_C#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\Swashbuckle.AspNetCore.SwaggerGen.dll
 D:\Proyectos_C#\HikvisionApi\HikvisionApi\obj\Release\net9.0\PubTmp\Out\Swashbuckle.AspNetCore.SwaggerUI.dll
