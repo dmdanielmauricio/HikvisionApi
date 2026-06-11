@@ -13,6 +13,7 @@ namespace HikvisionApi.Controllers
     public class AnprController : ControllerBase
     {
         private readonly string _savePath;
+        private readonly string _logsPath;
         private readonly HikvisionService _hikvisionService;
 
         public AnprController(
@@ -20,7 +21,22 @@ namespace HikvisionApi.Controllers
             HikvisionService hikvisionService)
         {
             _savePath = settings.Value.TargetFolder;
+            _logsPath = settings.Value.LogsFolder
+                                ?? Path.Combine(settings.Value.TargetFolder, "Logs");
             _hikvisionService = hikvisionService;
+        }
+
+        private async Task LogArchivo(string mensaje)
+        {
+            try
+            {
+                Directory.CreateDirectory(_logsPath);
+                var linea = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {mensaje}";
+                await System.IO.File.AppendAllTextAsync(
+                    Path.Combine(_logsPath, "api_log.txt"),
+                    linea + Environment.NewLine);
+            }
+            catch { /* no fallar si no se puede escribir el log */ }
         }
 
         [HttpPost]
@@ -56,7 +72,7 @@ namespace HikvisionApi.Controllers
                 {
                     plateImage = file;
                 }
-                else if (fileName.Contains("detection"))
+                else if (fileName.Contains("detection") || fileName.Contains("pedestrian"))
                 {
                     fullImage = file;
                 }
@@ -71,6 +87,8 @@ namespace HikvisionApi.Controllers
                     placa = xml.Descendants(ns + "licensePlate")
                                .FirstOrDefault()?.Value ?? "DESCONOCIDA";
 
+                    // Lane configurado directamente en la cámara:
+                    // Entrada → line 1 o 3 | Salida → line 2 o 4
                     lane = xml.Descendants(ns + "line")
                               .FirstOrDefault()?.Value ?? "0";
 
@@ -84,16 +102,26 @@ namespace HikvisionApi.Controllers
             placa = placa.ToUpper().Trim();
             lane = lane.Trim();
 
-            Console.WriteLine($"📥 {placa} - carril {lane} - {absTime}");
+            await LogArchivo($"📥 Placa:{placa} Lane:{lane} absTime:{absTime}");
+            await LogArchivo($"   plateImage:{plateImage?.FileName ?? "null"} fullImage:{fullImage?.FileName ?? "null"}");
+
+            if (string.IsNullOrEmpty(placa) || placa == "DESCONOCIDA")
+            {
+                await LogArchivo("⚠️ Placa vacía — descartado");
+                return Ok(new { ok = false, motivo = "SIN_PLACA" });
+            }
 
             // 🔥 PROCESAR (guardar imágenes + BD + abrir barrera)
-            await _hikvisionService.ProcesarAcceso(
-                placa,
-                lane,
-                absTime,
-                plateImage,
-                fullImage
-            );
+            try
+            {
+                await _hikvisionService.ProcesarAcceso(placa, lane, absTime, plateImage, fullImage);
+                await LogArchivo($"✅ ProcesarAcceso completado: {placa}");
+            }
+            catch (Exception ex)
+            {
+                await LogArchivo($"❌ ERROR ProcesarAcceso {placa}: {ex.Message}");
+                await LogArchivo($"   StackTrace: {ex.StackTrace?.Split('\n').FirstOrDefault()}");
+            }
 
             return Ok(new { placa, lane });
         }

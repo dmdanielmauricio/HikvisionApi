@@ -67,10 +67,10 @@ namespace HikvisionApi.Services
                     imagenUrl,
                     tipoVehiculo
                 });
-                var r = await _http.PostAsync("api/hikvision/ingreso",
+                var r = await _http.PostAsync("api/hikvision/procesar-entrada",
                     new StringContent(body, Encoding.UTF8, "application/json"));
                 var json = await r.Content.ReadAsStringAsync();
-                _logger.LogInformation("RegistrarIngreso {Placa}: {Json}", placa, json);
+                _logger.LogInformation("ProcesarEntrada {Placa}: {Json}", placa, json);
                 return Deserializar<IngresoResponse>(json) ?? new IngresoResponse();
             }
             catch (Exception ex)
@@ -89,14 +89,18 @@ namespace HikvisionApi.Services
             try
             {
                 var gracia = _settings.TiempoGraciaMinutos;
-                var url = $"api/hikvision/validar-salida?placa={Uri.EscapeDataString(placa)}" +
-                           $"&carril={carril}" +
-                           $"&imagenUrl={Uri.EscapeDataString(imagenUrl ?? "")}" +
-                           $"&carrilNombre={Uri.EscapeDataString(carrilNombre ?? "")}" +
-                           $"&tiempoGraciaMinutos={gracia}";
-                var r = await _http.GetAsync(url);
+                var body = JsonSerializer.Serialize(new
+                {
+                    placa,
+                    carril,
+                    carrilNombre,
+                    imagenUrl,
+                    tiempoGraciaMinutos = gracia
+                });
+                var r = await _http.PostAsync("api/hikvision/procesar-salida",
+                    new StringContent(body, Encoding.UTF8, "application/json"));
                 var json = await r.Content.ReadAsStringAsync();
-                _logger.LogInformation("ValidarSalida {Placa}: {Json}", placa, json);
+                _logger.LogInformation("ProcesarSalida {Placa}: {Json}", placa, json);
                 return Deserializar<SalidaResponse>(json) ?? new SalidaResponse();
             }
             catch (Exception ex)
@@ -128,6 +132,57 @@ namespace HikvisionApi.Services
         // =============================================
         // HELPER
         // =============================================
+        // =============================================
+        // ENVIAR IMAGEN AL VPS (Base64 temporal)
+        // =============================================
+        public async Task<string?> EnviarImagenAsync(
+            string placa, string carril, string tipoImagen, string base64)
+        {
+            try
+            {
+                var body = JsonSerializer.Serialize(new
+                {
+                    placa,
+                    carril,
+                    tipoImagen,
+                    imagenBase64 = base64
+                });
+                var r = await _http.PostAsync("api/hikvision/imagen",
+                    new StringContent(body, Encoding.UTF8, "application/json"));
+
+                if (r.IsSuccessStatusCode)
+                {
+                    var json = await r.Content.ReadAsStringAsync();
+                    _logger.LogInformation("📤 ImgVPS respuesta: {Json}", json);
+                    var obj = JsonSerializer.Deserialize<JsonElement>(json);
+                    if (obj.TryGetProperty("id", out var idProp))
+                    {
+                        var id = idProp.GetInt32();
+                        var baseUrl = _settings.ApiUrl.TrimEnd('/');
+                        return $"{baseUrl}/api/hikvision/imagen/{id}";
+                    }
+                    _logger.LogWarning("📤 ImgVPS sin 'id' en respuesta: {Json}", json);
+                }
+                else
+                {
+                    var err = await r.Content.ReadAsStringAsync();
+                    _logger.LogWarning("📤 ImgVPS error {Status}: {Err}", r.StatusCode, err);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "No se pudo enviar imagen al VPS para {Placa}", placa);
+            }
+            return null;
+        }
+
+        /// GET simple — devuelve JSON crudo. Para endpoints de lectura rápida.
+        public async Task<string> GetRawAsync(string relativeUrl)
+        {
+            var r = await _http.GetAsync(relativeUrl);
+            return await r.Content.ReadAsStringAsync();
+        }
+
         private static T? Deserializar<T>(string json)
         {
             try
@@ -181,6 +236,9 @@ namespace HikvisionApi.Services
         public string? Nit { get; set; }
         public string? Direccion { get; set; }
         public string? Telefono { get; set; }
+        public string? MensajeEncabezado { get; set; }
+        public string? MensajePie { get; set; }
+        public string? MensajeObservacion { get; set; }
         public string? Placa { get; set; }
         public string? TipoVehiculo { get; set; }
         public int RegistroId { get; set; }
@@ -189,5 +247,6 @@ namespace HikvisionApi.Services
         public bool EsMensualidad { get; set; }
         public string? NombreConvenio { get; set; }
         public string? VigenciaFin { get; set; }
+        public string? QrToken { get; set; }
     }
 }

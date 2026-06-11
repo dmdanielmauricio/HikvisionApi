@@ -19,3 +19,14 @@
         public bool Activa { get; set; }
     }
 }
+
+namespace HikvisionApi.Models
+{
+    /// Mapeado a VehiculosRestringidos de la BD compartida con ParkSky
+    public class VehiculoRestringidoLocal
+    {
+        public int Id { get; set; }
+        public string Placa { get; set; } = "";
+        public bool Activo { get; set; }
+    }
+}

@@ -83,12 +83,49 @@ namespace HikvisionApi.Services
         {
             _logger.LogInformation("📸 {Placa} carril {Lane} modo {Modo}", placa, lane, _modo);
 
+            // ── FILTRO DE PLACA ──────────────────────────────────────────
+            // 1. Descartar placas no reconocidas por la cámara
+            if (_anpr.PlacasDescartadas.Any(d =>
+                    placa.Equals(d, StringComparison.OrdinalIgnoreCase) ||
+                    placa.Contains(d, StringComparison.OrdinalIgnoreCase)))
+            {
+                _logger.LogWarning("🚫 Placa descartada (no reconocida): {Placa}", placa);
+                return;
+            }
+            // 2. Descartar lecturas parciales o muy cortas
+            if (placa.Length < _anpr.LongitudMinimaPlaca)
+            {
+                _logger.LogWarning("🚫 Placa descartada (muy corta {Len} chars): {Placa}",
+                    placa.Length, placa);
+                return;
+            }
+            // 3. Validar que la placa tenga solo caracteres válidos (letras y números)
+            if (!placa.All(c => char.IsLetterOrDigit(c)))
+            {
+                _logger.LogWarning("🚫 Placa descartada (caracteres inválidos): {Placa}", placa);
+                return;
+            }
+            // ────────────────────────────────────────────────────────────
+
             if (string.IsNullOrEmpty(absTime) || absTime.Length < 17)
                 absTime = DateTime.Now.ToString("yyyyMMddHHmmssfff");
 
             var imagenUrl = await GuardarImagenes(placa, lane, absTime, plateImage, fullImage);
 
-            bool esEntrada = lane == "1" || lane == "3";
+            // Determinar entrada/salida según configuración en appsettings
+            bool esEntrada;
+            if (_anpr.CarrilesEntrada.Contains(lane))
+                esEntrada = true;
+            else if (_anpr.CarrilesSalida.Contains(lane))
+                esEntrada = false;
+            else
+            {
+                // Lane no configurado — impar=entrada, par=salida
+                esEntrada = int.TryParse(lane, out int n) ? n % 2 != 0 : true;
+                _logger.LogWarning("⚠️ Carril {Lane} no configurado en appsettings — asumiendo {Tipo}",
+                    lane, esEntrada ? "ENTRADA" : "SALIDA");
+            }
+
             string carrilNombre = lane switch
             {
                 "1" => "Entrada1",
@@ -224,71 +261,134 @@ namespace HikvisionApi.Services
             string placa, string lane, string imagenUrl,
             string carrilNombre, string impresora)
         {
-            // Detectar tipo de vehículo por patrón de placa
             var tipoVehiculo = DetectarTipoVehiculo(placa);
+            _logger.LogInformation("🚗 Entrada — Placa:{Placa} Tipo:{Tipo} Lane:{Lane}",
+                placa, tipoVehiculo, lane);
 
-            if (_parqueadero.AbrirTodo)
-            {
-                try
-                {
-                    await _parkSky.RegistrarIngresoAsync(placa, lane, carrilNombre, false, null, imagenUrl, tipoVehiculo);
-                }
-                catch { /* sin internet — igual abre */ }
+            // ══════════════════════════════════════════════════════════
+            // TODA LA LÓGICA DE VALIDACIÓN USA BD LOCAL → respuesta <5ms
+            // ParkSky solo recibe el registro en background
+            // ══════════════════════════════════════════════════════════
 
-                await RegistrarAccesoLocal(placa, lane, "ENTRADA", true, "ABRE_TODO", "LIBRE", imagenUrl);
-                await EjecutarApertura(lane, "ENTRADA");
-                return;
-            }
-
+            // 1. ¿Restringido? → Bloquear inmediatamente
             try
             {
-                var conv = await _parkSky.ValidarConvenioAsync(placa);
-
-                if (conv.TieneConvenio && conv.Activo)
+                var restringido = await _db.VehiculosRestringidos
+                    .FirstOrDefaultAsync(v => v.Placa == placa && v.Activo);
+                if (restringido != null)
                 {
-                    await _parkSky.RegistrarIngresoAsync(placa, lane, carrilNombre,
-                        true, conv.ConvenioId, imagenUrl, tipoVehiculo);
-                    await RegistrarAccesoLocal(placa, lane, "ENTRADA", true,
-                        "CONVENIO_ACTIVO", "CONVENIO", imagenUrl);
-                    await EjecutarApertura(lane, "ENTRADA");
-                }
-                else if (conv.TieneConvenio && !conv.Activo)
-                {
-                    // Convenio vencido → tarifa normal
-                    await _parkSky.RegistrarIngresoAsync(placa, lane, carrilNombre,
-                        false, null, imagenUrl, tipoVehiculo);
-                    await RegistrarAccesoLocal(placa, lane, "ENTRADA", true,
-                        "CONVENIO_VENCIDO", "CASUAL", imagenUrl);
-
-                    if (_parqueadero.EntregarTiquete && !string.IsNullOrEmpty(impresora))
-                        await ImprimirDesdeParkskyOLocal(impresora, placa,
-                            conv.TipoVehiculo ?? "Vehículo", carrilNombre, null);
-
-                    await EjecutarApertura(lane, "ENTRADA");
-                }
-                else
-                {
-                    // Sin convenio — casual
-                    var ingresoCs = await _parkSky.RegistrarIngresoAsync(placa, lane, carrilNombre,
-                        false, null, imagenUrl, tipoVehiculo);
-                    await RegistrarAccesoLocal(placa, lane, "ENTRADA", true,
-                        "SIN_CONVENIO", "CASUAL", imagenUrl);
-
-                    if (_parqueadero.EntregarTiquete && !string.IsNullOrEmpty(impresora))
-                        await ImprimirDesdeParkskyOLocal(impresora, placa,
-                            "Vehículo", carrilNombre, ingresoCs.RegistroId);
-
-                    await EjecutarApertura(lane, "ENTRADA");
+                    await RegistrarAccesoLocal(placa, lane, "ENTRADA", false,
+                        "RESTRINGIDO", "BLOQUEADO", imagenUrl);
+                    _logger.LogWarning("🚫 Restringido bloqueado: {Placa}", placa);
+                    _ = Task.Run(async () => {
+                        try
+                        {
+                            await _parkSky.RegistrarIngresoAsync(placa, lane, carrilNombre,
+                            false, null, imagenUrl, tipoVehiculo);
+                        }
+                        catch { }
+                    });
+                    return;
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Sin internet — parqueadero entrada fallback");
-                await RegistrarAccesoLocal(placa, lane, "ENTRADA",
-                    _parqueadero.AbrirSiSinInternet, "SIN_INTERNET", "CASUAL", imagenUrl);
+                _logger.LogWarning(ex, "⚠️ BD local no disponible para restringidos");
+            }
 
-                if (_parqueadero.AbrirSiSinInternet)
-                    await EjecutarApertura(lane, "ENTRADA");
+            // 2. ¿Convenio activo en BD local?
+            bool tieneConvenioActivo = false;
+            int? convenioId = null;
+            try
+            {
+                var convenio = await _db.ConveniosVehiculos
+                    .Include(cv => cv.ConvenioMensualidad)
+                    .FirstOrDefaultAsync(cv =>
+                        cv.Placa == placa &&
+                        cv.Activo &&
+                        cv.ConvenioMensualidad.FechaFin >= DateTime.Today);
+
+                tieneConvenioActivo = convenio != null;
+                convenioId = convenio?.ConvenioId;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "⚠️ BD local no disponible para convenios — consultando VPS");
+                // Fallback a VPS si BD local no disponible
+                try
+                {
+                    var conv = await _parkSky.ValidarConvenioAsync(placa);
+                    tieneConvenioActivo = conv.TieneConvenio && conv.Activo;
+                    convenioId = conv.ConvenioId;
+                }
+                catch { }
+            }
+
+            if (tieneConvenioActivo)
+            {
+                // 3a. Mensualidad activa → abrir inmediatamente
+                await EjecutarApertura(lane, "ENTRADA");
+                await RegistrarIngresoLocal(placa, lane, true, convenioId);
+                await RegistrarAccesoLocal(placa, lane, "ENTRADA", true,
+                    "CONVENIO_ACTIVO", "CONVENIO", imagenUrl);
+                _logger.LogInformation("✅ Convenio activo: {Placa} → abriendo", placa);
+                _ = Task.Run(async () => {
+                    try
+                    {
+                        await _parkSky.RegistrarIngresoAsync(placa, lane, carrilNombre,
+                        true, convenioId, imagenUrl, tipoVehiculo);
+                    }
+                    catch { }
+                });
+                return;
+            }
+
+            // 3b. Casual
+            if (_parqueadero.AbrirTodo)
+            {
+                // AbrirTodo=true → abrir inmediatamente
+                await EjecutarApertura(lane, "ENTRADA");
+                await RegistrarIngresoLocal(placa, lane, false, null);
+                await RegistrarAccesoLocal(placa, lane, "ENTRADA", true,
+                    "CASUAL", "CASUAL", imagenUrl);
+                _ = Task.Run(async () => {
+                    try
+                    {
+                        var ingreso = await _parkSky.RegistrarIngresoAsync(placa, lane, carrilNombre,
+                            false, null, imagenUrl, tipoVehiculo);
+                        if (_parqueadero.EntregarTiquete && !string.IsNullOrEmpty(impresora))
+                            await ImprimirDesdeParkskyOLocal(impresora, placa,
+                                tipoVehiculo, carrilNombre, ingreso.RegistroId);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "⚠️ Registro ParkSky casual: {Placa}", placa);
+                    }
+                });
+            }
+            else
+            {
+                // AbrirTodo=false → NO abrir, solo registrar e imprimir
+                // El sensor óptico al tomar el tiquete abre la barrera
+                await RegistrarIngresoLocal(placa, lane, false, null);
+                await RegistrarAccesoLocal(placa, lane, "ENTRADA", false,
+                    "ESPERANDO_TIQUETE", "CASUAL", imagenUrl);
+                _ = Task.Run(async () => {
+                    try
+                    {
+                        var ingreso = await _parkSky.RegistrarIngresoAsync(placa, lane, carrilNombre,
+                            false, null, imagenUrl, tipoVehiculo);
+                        _logger.LogInformation("📥 Registro ParkSky {Placa}: Id={Id}",
+                            placa, ingreso.RegistroId);
+                        if (!string.IsNullOrEmpty(impresora))
+                            await ImprimirDesdeParkskyOLocal(impresora, placa,
+                                tipoVehiculo, carrilNombre, ingreso.RegistroId);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "⚠️ Registro e impresión: {Placa}", placa);
+                    }
+                });
             }
         }
 
@@ -327,8 +427,9 @@ namespace HikvisionApi.Services
             // Verificar pago con tiempo de gracia
             var limiteGracia = DateTime.Now.AddMinutes(-_parqueadero.TiempoGraciaMinutos);
             var registro = await _db.Registros
+                .Include(r => r.Vehiculo)
                 .OrderByDescending(r => r.FechaEntrada)
-                .FirstOrDefaultAsync(r => r.Placa == placa && !r.Activo
+                .FirstOrDefaultAsync(r => r.Vehiculo.Placa == placa && !r.Activo
                     && r.ValorPagado > 0
                     && r.FechaSalida.HasValue
                     && r.FechaSalida.Value >= limiteGracia);
@@ -354,43 +455,57 @@ namespace HikvisionApi.Services
         private async Task SalidaParqueaderoNube(
             string placa, string lane, string imagenUrl, string carrilNombre)
         {
+            _logger.LogInformation("🚪 Salida — Placa:{Placa} Lane:{Lane}", placa, lane);
+
+            // ══════════════════════════════════════════════════════════
+            // SALIDA RÁPIDA: GET simple → mínima latencia
+            // ══════════════════════════════════════════════════════════
             try
             {
-                // Convenio activo nube
-                var conv = await _parkSky.ValidarConvenioAsync(placa);
-                if (conv.TieneConvenio && conv.Activo)
-                {
-                    await _parkSky.ValidarSalidaAsync(placa, lane, imagenUrl, carrilNombre);
-                    await RegistrarAccesoLocal(placa, lane, "SALIDA", true,
-                        "CONVENIO_ACTIVO", "CONVENIO", imagenUrl);
-                    await EjecutarApertura(lane, "SALIDA");
-                    return;
-                }
+                var gracia = _parqueadero.TiempoGraciaMinutos;
+                var url = $"api/hikvision/salida-rapida?placa={Uri.EscapeDataString(placa)}&gracia={gracia}";
+                var r = await _parkSky.GetRawAsync(url);
 
-                var salida = await _parkSky.ValidarSalidaAsync(
-                    placa, lane, imagenUrl, carrilNombre);
+                using var doc = System.Text.Json.JsonDocument.Parse(r);
+                var root = doc.RootElement;
+                bool autorizado = root.GetProperty("ok").GetBoolean();
+                string motivo = root.TryGetProperty("motivo", out var m) ? m.GetString() ?? "" : "";
 
-                if (salida.Autorizado)
+                _logger.LogInformation("🚪 Salida {Placa}: Auth={A} Motivo={M}",
+                    placa, autorizado, motivo);
+
+                if (autorizado)
                 {
-                    await RegistrarAccesoLocal(placa, lane, "SALIDA", true,
-                        salida.Motivo ?? "PAGADO", "CASUAL", imagenUrl);
                     await EjecutarApertura(lane, "SALIDA");
+                    await RegistrarAccesoLocal(placa, lane, "SALIDA", true,
+                        motivo, "CASUAL", imagenUrl);
+                    // Notificar VPS en background para cerrar registro
+                    _ = Task.Run(async () => {
+                        try { await _parkSky.ValidarSalidaAsync(placa, lane, imagenUrl, carrilNombre); }
+                        catch { }
+                    });
                 }
                 else
                 {
                     await RegistrarAccesoLocal(placa, lane, "SALIDA", false,
                         "NO_PAGADO", "BLOQUEADO", imagenUrl);
-                    _logger.LogWarning("⛔ Salida bloqueada (sin pago nube): {Placa}", placa);
+                    _logger.LogWarning("⛔ Salida bloqueada: {Placa}", placa);
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Sin internet — salida fallback");
-                await RegistrarAccesoLocal(placa, lane, "SALIDA",
-                    _parqueadero.AbrirSiSinInternet, "SIN_INTERNET", "CASUAL", imagenUrl);
-
+                _logger.LogWarning(ex, "⚠️ Error salida {Placa} — fallback", placa);
                 if (_parqueadero.AbrirSiSinInternet)
+                {
                     await EjecutarApertura(lane, "SALIDA");
+                    await RegistrarAccesoLocal(placa, lane, "SALIDA", true,
+                        "SIN_INTERNET", "LIBRE", imagenUrl);
+                }
+                else
+                {
+                    await RegistrarAccesoLocal(placa, lane, "SALIDA", false,
+                        "SIN_INTERNET", "BLOQUEADO", imagenUrl);
+                }
             }
         }
 
@@ -469,69 +584,160 @@ namespace HikvisionApi.Services
         {
             string fecha = absTime.Substring(0, 8);
             string nombre = $"{absTime}_{placa}_{lane}.jpg";
-            string carpeta = Path.Combine(_anpr.TargetFolder, $"Camara{lane}", fecha);
-            string carpetaX = Path.Combine(_anpr.TargetFolder, $"Camara{lane}X", fecha);
 
-            Directory.CreateDirectory(carpeta);
-            Directory.CreateDirectory(carpetaX);
+            // Leer ambas imágenes en memoria PRIMERO (los streams solo se leen una vez)
+            byte[]? plateBytes = null;
+            byte[]? fullBytes = null;
 
             if (plateImage != null)
             {
-                using var s = new FileStream(Path.Combine(carpeta, nombre), FileMode.Create);
-                await plateImage.CopyToAsync(s);
+                using var ms = new MemoryStream();
+                await plateImage.CopyToAsync(ms);
+                plateBytes = ms.ToArray();
             }
             if (fullImage != null)
             {
-                using var s = new FileStream(Path.Combine(carpetaX, nombre), FileMode.Create);
-                await fullImage.CopyToAsync(s);
+                using var ms = new MemoryStream();
+                await fullImage.CopyToAsync(ms);
+                fullBytes = ms.ToArray();
             }
 
-            // URL absoluta apuntando a la API local — no al VPS
-            var baseUrl = _anpr.BaseUrl?.TrimEnd('/');
-            var rutaRelativa = $"/anpr/Camara{lane}/{fecha}/{nombre}";
-            return string.IsNullOrEmpty(baseUrl)
-                ? rutaRelativa
-                : $"{baseUrl}{rutaRelativa}";
+            _logger.LogInformation("📷 Bytes — plate:{P} full:{F}",
+                plateBytes?.Length ?? 0, fullBytes?.Length ?? 0);
+
+            // Guardar localmente como respaldo
+            try
+            {
+                string carpeta = Path.Combine(_anpr.TargetFolder, $"Camara{lane}", fecha);
+                string carpetaX = Path.Combine(_anpr.TargetFolder, $"Camara{lane}X", fecha);
+                Directory.CreateDirectory(carpeta);
+                Directory.CreateDirectory(carpetaX);
+
+                if (plateBytes != null)
+                    await File.WriteAllBytesAsync(Path.Combine(carpeta, nombre), plateBytes);
+                if (fullBytes != null)
+                    await File.WriteAllBytesAsync(Path.Combine(carpetaX, nombre), fullBytes);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "No se pudo guardar imagen local para {Placa}", placa);
+            }
+
+            // Subir al VPS — usar foto completa, si no hay usar recorte placa
+            var imgBytes = fullBytes ?? plateBytes;
+            var tipo = fullBytes != null ? "Completa" : "Placa";
+
+            if (_parkSky != null && imgBytes != null && imgBytes.Length > 0)
+            {
+                try
+                {
+                    var base64 = Convert.ToBase64String(imgBytes);
+                    var urlVps = await _parkSky.EnviarImagenAsync(placa, lane, tipo, base64);
+                    if (!string.IsNullOrEmpty(urlVps))
+                    {
+                        _logger.LogInformation("🖼️ Imagen VPS OK: {Url}", urlVps);
+                        return urlVps;
+                    }
+                    _logger.LogWarning("⚠️ VPS no devolvió URL para {Placa}", placa);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "No se pudo subir imagen al VPS para {Placa}", placa);
+                }
+            }
+            else
+            {
+                _logger.LogWarning("⚠️ Sin bytes de imagen para {Placa} — no se sube al VPS", placa);
+            }
+
+            return "";
         }
 
         private async Task RegistrarAccesoLocal(
             string placa, string carril, string tipo,
             bool autorizado, string motivo, string tipoAcceso, string? imagenUrl)
         {
-            _db.AccesosVehiculares.Add(new AccesoVehicular
+            try
             {
-                Placa = placa,
-                Carril = carril,
-                FechaHora = DateTime.Now,
-                Autorizado = autorizado,
-                TipoMovimiento = tipo,
-                Motivo = motivo,
-                ImagenUrl = imagenUrl ?? ""
-            });
-            await _db.SaveChangesAsync();
+                _db.AccesosVehiculares.Add(new AccesoVehicular
+                {
+                    Placa = placa,
+                    Carril = carril,
+                    FechaHora = DateTime.Now,
+                    Autorizado = autorizado,
+                    TipoMovimiento = tipo,
+                    Motivo = motivo,
+                    ImagenUrl = imagenUrl ?? ""
+                });
+                await _db.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                // BD local no disponible — solo loguear, no interrumpir el flujo
+                _logger.LogWarning("⚠️ BD local no disponible (AccesoVehicular no guardado): {Msg}", ex.Message);
+            }
         }
 
         private async Task RegistrarIngresoLocal(
             string placa, string lane, bool esMensualidad, int? convenioId)
         {
-            var vehiculo = await _db.Vehiculos.FirstOrDefaultAsync(v => v.Placa == placa);
-            if (vehiculo == null)
+            try
             {
-                vehiculo = new Vehiculo
-                {
-                    Placa = placa,
-                    Tipo = DetectarTipoVehiculo(placa),
-                    Activo = true,
-                    PropietarioId = 0,
-                    EsPrivado = false
-                };
-                _db.Vehiculos.Add(vehiculo);
-                await _db.SaveChangesAsync();
-            }
+                // 1. Buscar o crear vehículo
+                var vehiculo = await _db.Vehiculos
+                    .FirstOrDefaultAsync(v => v.Placa == placa);
 
-            // Solo registrar en BD local — no tiene RegistroParqueo completo
-            // El registro real está en ParkSky nube si FuenteDatos = "Nube"
-            _logger.LogInformation("Ingreso local registrado: {Placa}", placa);
+                if (vehiculo == null)
+                {
+                    vehiculo = new Vehiculo
+                    {
+                        Placa = placa,
+                        Tipo = DetectarTipoVehiculo(placa),
+                        Activo = true,
+                        PropietarioId = 0,
+                        EsPrivado = false
+                    };
+                    _db.Vehiculos.Add(vehiculo);
+                    await _db.SaveChangesAsync();
+                }
+
+                // 2. Buscar tarifa por tipo de vehículo
+                var tipo = DetectarTipoVehiculo(placa);
+                var tarifa = await _db.Tarifas
+                    .FirstOrDefaultAsync(t =>
+                        t.Activa &&
+                        t.TipoVehiculo != null &&
+                        t.TipoVehiculo.Contains(tipo));
+
+                // Si no encuentra tarifa específica, usar la primera activa
+                tarifa ??= await _db.Tarifas.FirstOrDefaultAsync(t => t.Activa);
+
+                if (tarifa == null)
+                {
+                    _logger.LogWarning("⚠️ Sin tarifa disponible para {Placa} — no se crea registro local", placa);
+                    return;
+                }
+
+                // 3. Crear el registro de ingreso
+                var registro = new RegistroLocal
+                {
+                    VehiculoId = vehiculo.Id,
+                    TarifaId = tarifa.Id,
+                    FechaEntrada = DateTime.Now,
+                    Activo = true,
+                    EsMensualidad = esMensualidad,
+                    ConvenioMensualidadId = convenioId
+                };
+
+                _db.Registros.Add(registro);
+                await _db.SaveChangesAsync();
+
+                _logger.LogInformation("✅ Registro local creado: {Placa} Id={Id}", placa, registro.Id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("⚠️ BD local no disponible (RegistroLocal no guardado): {Msg}", ex.Message);
+            }
         }
 
 
@@ -571,28 +777,41 @@ namespace HikvisionApi.Services
 
         private string DetectarTipoVehiculo(string placa)
         {
-            // Consultar patrones activos en la BD
-            var patrones = _db?.PatronPlacas?
-                .Where(p => p.Activo)
-                .Include(p => p.Tarifa)
-                .ToList();
-
-            if (patrones != null)
+            // Consultar patrones activos en la BD (con protección si BD no disponible)
+            try
             {
-                foreach (var p in patrones)
+                var patrones = _db?.PatronPlacas?
+                    .Where(p => p.Activo)
+                    .Include(p => p.Tarifa)
+                    .ToList();
+
+                if (patrones != null)
                 {
-                    if (CoincidePatronLocal(placa, p.Patron))
-                        return p.Tarifa?.TipoVehiculo ?? p.Nombre ?? "Carro";
+                    foreach (var p in patrones)
+                    {
+                        if (CoincidePatronLocal(placa, p.Patron))
+                            return p.Tarifa?.TipoVehiculo ?? p.Nombre ?? "Carro";
+                    }
                 }
             }
+            catch
+            {
+                // BD no disponible — usar fallback por longitud
+            }
 
-            // Fallback: lógica por longitud si no hay patrones configurados
-            // Moto Colombia: AA000A (2 letras + 3 números + 1 letra = 6 chars)
-            if (placa.Length == 6 &&
-                char.IsLetter(placa[0]) && char.IsLetter(placa[1]) &&
-                char.IsDigit(placa[2]) && char.IsDigit(placa[3]) &&
-                char.IsDigit(placa[4]) && char.IsLetter(placa[5]))
-                return "Moto";
+            // Fallback: detección por patrón colombiano
+            // Moto vieja:  AA000A  (2L + 3D + 1L) ej: HB123A
+            // Moto nueva:  AAA00A  (3L + 2D + 1L) ej: JPH53H
+            // Carro:       AAA000  (3L + 3D)       ej: BXS193
+            if (placa.Length == 6)
+            {
+                bool ultimaEsLetra = char.IsLetter(placa[5]);
+                bool pos0L = char.IsLetter(placa[0]);
+                bool pos1L = char.IsLetter(placa[1]);
+
+                if (ultimaEsLetra && pos0L && pos1L)
+                    return "Moto";
+            }
 
             return "Carro";
         }

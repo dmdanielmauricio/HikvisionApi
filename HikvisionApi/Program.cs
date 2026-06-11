@@ -6,16 +6,24 @@ using Microsoft.EntityFrameworkCore;
 var builder = WebApplication.CreateBuilder(args);
 
 // =============================================
-// BASE DE DATOS LOCAL
+// BASE DE DATOS LOCAL (opcional — modo Nube no la requiere)
 // =============================================
 var connStr = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<AppDbContext>(opts =>
 {
-    if (!string.IsNullOrWhiteSpace(connStr))
-        opts.UseSqlServer(connStr);
-    else
-        opts.UseSqlServer(
-            "Server=localhost;Database=PorteriaDB_Empty;Trusted_Connection=True;TrustServerCertificate=True;");
+    var cs = !string.IsNullOrWhiteSpace(connStr)
+        ? connStr
+        : "Server=localhost;Database=PorteriaDB_Empty;Trusted_Connection=True;TrustServerCertificate=True;";
+
+    opts.UseSqlServer(cs, sqlOpts =>
+    {
+        // Timeout corto para no bloquear el flujo si la BD no está disponible
+        sqlOpts.CommandTimeout(5);
+        sqlOpts.EnableRetryOnFailure(
+            maxRetryCount: 0,           // sin reintentos automáticos
+            maxRetryDelay: TimeSpan.Zero,
+            errorNumbersToAdd: null);
+    });
 });
 
 // =============================================
@@ -42,11 +50,13 @@ builder.Services.AddScoped<HikvisionService>();
 builder.Services.AddSingleton<PrintService>();
 builder.Services.AddControllers();
 
+// Límite de tamaño para recibir imágenes ANPR de la cámara
 builder.WebHost.ConfigureKestrel(opts =>
     opts.Limits.MaxRequestBodySize = 50 * 1024 * 1024);
 
 var app = builder.Build();
 
+// Servir imágenes ANPR como archivos estáticos
 var anprFolder = builder.Configuration["AnprSettings:TargetFolder"] ?? "D:\\ANPR";
 if (Directory.Exists(anprFolder))
 {
@@ -59,4 +69,22 @@ if (Directory.Exists(anprFolder))
 
 app.UseRouting();
 app.MapControllers();
+
+// =============================================
+// HEALTH CHECK — abrir en navegador para verificar
+// GET http://10.20.34.158:5000/status
+// =============================================
+app.MapGet("/status", (IConfiguration config) => new
+{
+    ok = true,
+    app = "HikvisionApi",
+    version = "2.0",
+    hora = DateTime.Now.ToString("dd/MM/yyyy HH:mm:ss"),
+    modo = config["ModoOperacion"] ?? "—",
+    fuenteDatos = config["Parqueadero:FuenteDatos"] ?? config["Porteria:FuenteDatos"] ?? "—",
+    parkSkyUrl = config["ParkSkySettings:ApiUrl"] ?? "—",
+    barrera = config["BarrierSettings:BaseUrl"] ?? "—",
+    anprFolder = config["AnprSettings:TargetFolder"] ?? "—"
+});
+
 app.Run();
