@@ -6,6 +6,12 @@
         public string Username { get; set; } = string.Empty;
         public string Password { get; set; } = string.Empty;
 
+        /// Habilita registro de QR en controladora al ingreso
+        public bool UsarQR { get; set; } = false;
+
+        /// Puerta de salida donde está el lector QR (1-4)
+        public string PuertaLectorQR { get; set; } = "2";
+
         public DoorSettings Doors { get; set; } = new();
     }
 

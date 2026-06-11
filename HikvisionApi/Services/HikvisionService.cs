@@ -105,6 +105,30 @@ namespace HikvisionApi.Services
                 _logger.LogWarning("🚫 Placa descartada (caracteres inválidos): {Placa}", placa);
                 return;
             }
+
+            // 4. Validar formato colombiano — descartar si no coincide con ningún
+            //    patrón personalizado ni con los formatos estándar
+            var tipoDetectado = DetectarTipoPlacaColombia(placa);
+            if (tipoDetectado == null)
+            {
+                // Verificar si coincide con algún patrón personalizado en BD
+                bool tienePatronPersonalizado = false;
+                try
+                {
+                    var patrones = _db?.PatronPlacas?
+                        .Where(p => p.Activo).ToList();
+                    if (patrones != null)
+                        tienePatronPersonalizado = patrones.Any(p =>
+                            CoincidePatronLocal(placa, p.Patron));
+                }
+                catch { }
+
+                if (!tienePatronPersonalizado)
+                {
+                    _logger.LogWarning("🚫 Placa descartada (formato no reconocido): {Placa}", placa);
+                    return;
+                }
+            }
             // ────────────────────────────────────────────────────────────
 
             if (string.IsNullOrEmpty(absTime) || absTime.Length < 17)
@@ -335,8 +359,8 @@ namespace HikvisionApi.Services
                 _ = Task.Run(async () => {
                     try
                     {
-                        await _parkSky.RegistrarIngresoAsync(placa, lane, carrilNombre,
-                        true, convenioId, imagenUrl, tipoVehiculo);
+                        var ing = await _parkSky.RegistrarIngresoAsync(placa, lane, carrilNombre,
+                            true, convenioId, imagenUrl, tipoVehiculo);
                     }
                     catch { }
                 });
@@ -575,6 +599,125 @@ namespace HikvisionApi.Services
             }
         }
 
+        // Método público para llamadas desde PrintController (ingreso manual)
+        public async Task RegistrarQrPublico(int registroId, string qrToken)
+            => await RegistrarQrEnControladora(registroId, qrToken);
+
+        // =============================================
+        // QR — REGISTRAR EN CONTROLADORA AL INGRESO
+        // Usa PUT /ISAPI/AccessControl/CardInfo/record
+        // =============================================
+
+        // =============================================
+        // QR — SINCRONIZAR DESDE VPS (ingreso manual)
+        // Si ParkSky no devolvió QrToken, consultarlo
+        // =============================================
+        private async Task SincronizarQrDesdeVps(string placa)
+        {
+            if (!_barrier.UsarQR) return;
+            try
+            {
+                var json = await _parkSky.GetRawAsync(
+                    $"api/hikvision/qr-activo?placa={Uri.EscapeDataString(placa)}");
+                using var doc = System.Text.Json.JsonDocument.Parse(json);
+                var root = doc.RootElement;
+                if (root.TryGetProperty("ok", out var ok) && ok.GetBoolean() &&
+                    root.TryGetProperty("registroId", out var rid) &&
+                    root.TryGetProperty("qrToken", out var qt) &&
+                    !string.IsNullOrEmpty(qt.GetString()))
+                {
+                    await RegistrarQrEnControladora(rid.GetInt32(), qt.GetString()!);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "⚠️ No se pudo sincronizar QR para {Placa}", placa);
+            }
+        }
+
+        private async Task RegistrarQrEnControladora(int registroId, string qrToken)
+        {
+            if (!_barrier.UsarQR || string.IsNullOrEmpty(qrToken)) return;
+
+            try
+            {
+                var baseUrl = _barrier.BaseUrl
+                    .Replace("/AccessControl/RemoteControl/door/", "");
+                var endpoint = $"{baseUrl}/ISAPI/AccessControl/CardInfo/record";
+                var puerta = _barrier.PuertaLectorQR;
+
+                var xml = $@"<?xml version=""1.0"" encoding=""UTF-8""?>
+<CardInfo>
+  <employeeNo>REG{registroId}</employeeNo>
+  <cardNo>{qrToken}</cardNo>
+  <cardType>normalCard</cardType>
+  <leaderCard>false</leaderCard>
+  <RightPlan>
+    <doorNo>{puerta}</doorNo>
+    <planTemplateNo>1</planTemplateNo>
+  </RightPlan>
+</CardInfo>";
+
+                var handler = new HttpClientHandler
+                {
+                    Credentials = new NetworkCredential(_barrier.Username, _barrier.Password),
+                    PreAuthenticate = true
+                };
+                using var client = new HttpClient(handler);
+                var r = await client.PutAsync(endpoint,
+                    new StringContent(xml, Encoding.UTF8, "application/xml"));
+
+                _logger.LogInformation("📱 QR registrado en controladora: REG{Id} → {Status}",
+                    registroId, r.StatusCode);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "⚠️ No se pudo registrar QR en controladora para REG{Id}", registroId);
+            }
+        }
+
+        // =============================================
+        // QR — ELIMINAR DE CONTROLADORA AL SALIR
+        // Usa DELETE /ISAPI/AccessControl/CardInfo/record
+        // =============================================
+        private async Task EliminarQrDeControladora(int registroId)
+        {
+            if (!_barrier.UsarQR) return;
+
+            try
+            {
+                var baseUrl = _barrier.BaseUrl
+                    .Replace("/AccessControl/RemoteControl/door/", "");
+                var endpoint = $"{baseUrl}/ISAPI/AccessControl/CardInfo/record";
+
+                var xml = $@"<?xml version=""1.0"" encoding=""UTF-8""?>
+<CardInfoDelCond>
+  <EmployeeNoList>
+    <employeeNo>REG{registroId}</employeeNo>
+  </EmployeeNoList>
+</CardInfoDelCond>";
+
+                var handler = new HttpClientHandler
+                {
+                    Credentials = new NetworkCredential(_barrier.Username, _barrier.Password),
+                    PreAuthenticate = true
+                };
+                using var client = new HttpClient(handler);
+                var req = new HttpRequestMessage(HttpMethod.Delete, endpoint)
+                {
+                    Content = new StringContent(xml, Encoding.UTF8, "application/xml")
+                };
+                var r = await client.SendAsync(req);
+
+                _logger.LogInformation("🗑️ QR eliminado de controladora: REG{Id} → {Status}",
+                    registroId, r.StatusCode);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "⚠️ No se pudo eliminar QR de controladora para REG{Id}", registroId);
+            }
+        }
+
         // =============================================
         // HELPERS
         // =============================================
@@ -752,20 +895,28 @@ namespace HikvisionApi.Services
             {
                 try
                 {
-                    var ticket = await _parkSky.ObtenerTicketAsync(registroId.Value);
-                    if (ticket != null && ticket.Ok)
+                    // Abrir URL del tiquete de ParkSky en el navegador
+                    // TicketEntrada.cshtml hace window.print() automáticamente
+                    var baseUrl = _parkSkySettings.ApiUrl.TrimEnd('/');
+                    var ticketUrl = $"{baseUrl}/Control/TicketEntrada/{registroId.Value}";
+
+                    _logger.LogInformation("🖨️ Abriendo tiquete ParkSky: {Url}", ticketUrl);
+
+                    var psi = new System.Diagnostics.ProcessStartInfo
                     {
-                        _print.ImprimirDesdeTicket(impresora, ticket);
-                        return;
-                    }
+                        FileName = ticketUrl,
+                        UseShellExecute = true   // abre el navegador predeterminado
+                    };
+                    System.Diagnostics.Process.Start(psi);
+                    return;
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "No se pudo obtener ticket de ParkSky, usando fallback");
+                    _logger.LogWarning(ex, "No se pudo abrir tiquete ParkSky — fallback local");
                 }
             }
 
-            // Fallback — imprimir con datos locales
+            // Fallback — imprimir con datos locales si ParkSky no disponible
             _print.ImprimirTiqueteLocal(
                 impresora, placa, tipo, DateTime.Now, carrilNombre, false);
         }
@@ -777,7 +928,7 @@ namespace HikvisionApi.Services
 
         private string DetectarTipoVehiculo(string placa)
         {
-            // Consultar patrones activos en la BD (con protección si BD no disponible)
+            // 1. Consultar patrones personalizados en BD (máxima prioridad)
             try
             {
                 var patrones = _db?.PatronPlacas?
@@ -794,27 +945,37 @@ namespace HikvisionApi.Services
                     }
                 }
             }
-            catch
-            {
-                // BD no disponible — usar fallback por longitud
-            }
+            catch { /* BD no disponible */ }
 
-            // Fallback: detección por patrón colombiano
-            // Moto vieja:  AA000A  (2L + 3D + 1L) ej: HB123A
-            // Moto nueva:  AAA00A  (3L + 2D + 1L) ej: JPH53H
-            // Carro:       AAA000  (3L + 3D)       ej: BXS193
-            if (placa.Length == 6)
-            {
-                bool ultimaEsLetra = char.IsLetter(placa[5]);
-                bool pos0L = char.IsLetter(placa[0]);
-                bool pos1L = char.IsLetter(placa[1]);
-
-                if (ultimaEsLetra && pos0L && pos1L)
-                    return "Moto";
-            }
-
-            return "Carro";
+            // 2. Reglas colombianas estándar
+            return DetectarTipoPlacaColombia(placa);
         }
+
+        /// Detecta tipo de vehículo por formato de placa colombiana.
+        /// Retorna "Carro", "Moto" o null si el formato no es reconocido.
+        private static string? DetectarTipoPlacaColombia(string placa)
+        {
+            if (string.IsNullOrWhiteSpace(placa)) return null;
+            placa = placa.ToUpper().Trim();
+            int n = placa.Length;
+            bool L(int i) => i < n && char.IsLetter(placa[i]);
+            bool D(int i) => i < n && char.IsDigit(placa[i]);
+
+            // AAA### (6) → Carro
+            if (n == 6 && L(0) && L(1) && L(2) && D(3) && D(4) && D(5))
+                return "Carro";
+
+            // AAA##A (6) → Moto nueva
+            if (n == 6 && L(0) && L(1) && L(2) && D(3) && D(4) && L(5))
+                return "Moto";
+
+            // AAA## (5) → Moto antigua (sin letra final)
+            if (n == 5 && L(0) && L(1) && L(2) && D(3) && D(4))
+                return "Moto";
+
+            return null; // formato no reconocido → descartar en cámaras
+        }
+        
 
         /// Misma lógica que ControlController.CoincidePatron
         private static bool CoincidePatronLocal(string placa, string patron)

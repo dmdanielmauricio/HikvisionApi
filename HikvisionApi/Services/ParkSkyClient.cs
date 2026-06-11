@@ -217,6 +217,7 @@ namespace HikvisionApi.Services
         public string? Tipo { get; set; }
         public string? Motivo { get; set; }
         public string? Mensaje { get; set; }
+        public string? QrToken { get; set; }
     }
 
     public class SalidaResponse
