@@ -195,3 +195,4 @@ D:\Proyectos_C#\HikvisionApi\HikvisionApi\obj\Debug\net9.0\refint\HikvisionApi.d
 D:\Proyectos_C#\HikvisionApi\HikvisionApi\obj\Debug\net9.0\HikvisionApi.pdb
 D:\Proyectos_C#\HikvisionApi\HikvisionApi\obj\Debug\net9.0\HikvisionApi.genruntimeconfig.cache
 D:\Proyectos_C#\HikvisionApi\HikvisionApi\obj\Debug\net9.0\ref\HikvisionApi.dll
+D:\Proyectos_C#\HikvisionApi\HikvisionApi\bin\Debug\net9.0\QRCoder.dll
