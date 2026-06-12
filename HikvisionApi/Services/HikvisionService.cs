@@ -900,24 +900,28 @@ namespace HikvisionApi.Services
             {
                 try
                 {
-                    // Abrir URL del tiquete de ParkSky en el navegador
-                    // TicketEntrada.cshtml hace window.print() automáticamente
-                    var baseUrl = _parkSkySettings.ApiUrl.TrimEnd('/');
-                    var ticketUrl = $"{baseUrl}/Control/TicketEntrada/{registroId.Value}";
+                    var ticket =
+                        await _parkSky.ObtenerTicketAsync(
+                            registroId.Value);
 
-                    _logger.LogInformation("🖨️ Abriendo tiquete ParkSky: {Url}", ticketUrl);
-
-                    var psi = new System.Diagnostics.ProcessStartInfo
+                    if (ticket != null && ticket.Ok)
                     {
-                        FileName = ticketUrl,
-                        UseShellExecute = true   // abre el navegador predeterminado
-                    };
-                    System.Diagnostics.Process.Start(psi);
-                    return;
+                        _logger.LogInformation(
+                            "🖨️ Imprimiendo ticket directo RegistroId={Id}",
+                            registroId.Value);
+
+                        _print.ImprimirDesdeTicket(
+                            impresora,
+                            ticket);
+
+                        return;
+                    }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "No se pudo abrir tiquete ParkSky — fallback local");
+                    _logger.LogWarning(
+                        ex,
+                        "Error obteniendo ticket desde ParkSky");
                 }
             }
 
