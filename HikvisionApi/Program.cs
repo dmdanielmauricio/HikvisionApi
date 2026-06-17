@@ -6,7 +6,26 @@ using Microsoft.EntityFrameworkCore;
 var builder = WebApplication.CreateBuilder(args);
 
 // =============================================
-// BASE DE DATOS LOCAL (opcional — modo Nube no la requiere)
+// CORS — permitir llamadas desde ParkSky (HTTPS)
+// hacia la API local (HTTP) sin bloqueo de origen
+// =============================================
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("ParkSky", policy =>
+    {
+        policy
+            .WithOrigins(
+                "https://park.sysparking.com",
+                "http://localhost:7194",
+                "https://localhost:7194"
+            )
+            .AllowAnyMethod()
+            .AllowAnyHeader();
+    });
+});
+
+// =============================================
+// BASE DE DATOS LOCAL
 // =============================================
 var connStr = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<AppDbContext>(opts =>
@@ -14,13 +33,11 @@ builder.Services.AddDbContext<AppDbContext>(opts =>
     var cs = !string.IsNullOrWhiteSpace(connStr)
         ? connStr
         : "Server=localhost;Database=PorteriaDB_Empty;Trusted_Connection=True;TrustServerCertificate=True;";
-
     opts.UseSqlServer(cs, sqlOpts =>
     {
-        // Timeout corto para no bloquear el flujo si la BD no está disponible
         sqlOpts.CommandTimeout(5);
         sqlOpts.EnableRetryOnFailure(
-            maxRetryCount: 0,           // sin reintentos automáticos
+            maxRetryCount: 0,
             maxRetryDelay: TimeSpan.Zero,
             errorNumbersToAdd: null);
     });
@@ -50,13 +67,14 @@ builder.Services.AddScoped<HikvisionService>();
 builder.Services.AddSingleton<PrintService>();
 builder.Services.AddControllers();
 
-// Límite de tamaño para recibir imágenes ANPR de la cámara
 builder.WebHost.ConfigureKestrel(opts =>
     opts.Limits.MaxRequestBodySize = 50 * 1024 * 1024);
 
 var app = builder.Build();
 
-// Servir imágenes ANPR como archivos estáticos
+// ── CORS debe ir antes de UseRouting ──
+app.UseCors("ParkSky");
+
 var anprFolder = builder.Configuration["AnprSettings:TargetFolder"] ?? "D:\\ANPR";
 if (Directory.Exists(anprFolder))
 {
@@ -70,10 +88,6 @@ if (Directory.Exists(anprFolder))
 app.UseRouting();
 app.MapControllers();
 
-// =============================================
-// HEALTH CHECK — abrir en navegador para verificar
-// GET http://10.20.34.158:5000/status
-// =============================================
 app.MapGet("/status", (IConfiguration config) => new
 {
     ok = true,

@@ -6,11 +6,14 @@
         public string Username { get; set; } = string.Empty;
         public string Password { get; set; } = string.Empty;
 
-        /// Habilita registro de QR en controladora al ingreso
+        /// Habilita registro de QR en controladora al pago
         public bool UsarQR { get; set; } = false;
 
-        /// Puerta de salida donde está el lector QR (1-4)
-        public string PuertaLectorQR { get; set; } = "2";
+        /// Puertas de salida donde hay lector QR (una o varias)
+        /// Una portería:  "PuertaLectorQR": [2]
+        /// Dos porterías: "PuertaLectorQR": [2, 4]
+        /// La controladora abre SOLO la puerta donde se presenta el QR
+        public List<int> PuertaLectorQR { get; set; } = new() { 2 };
 
         public DoorSettings Doors { get; set; } = new();
     }

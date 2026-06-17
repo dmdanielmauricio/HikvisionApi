@@ -21,6 +21,7 @@ namespace HikvisionApi.Services
         private readonly IConfiguration _config;
         private readonly ILogger<HikvisionService> _logger;
         private readonly string _modo;
+        private readonly string _name;
 
         public HikvisionService(
             IOptions<AnprSettings> anpr,
@@ -45,6 +46,7 @@ namespace HikvisionApi.Services
             _config = config;
             _logger = logger;
             _modo = config["ModoOperacion"] ?? "Porteria";
+            _name = config["Name"] ?? "HikvisionService";
         }
 
         // =============================================
@@ -639,51 +641,135 @@ namespace HikvisionApi.Services
                 _logger.LogWarning(ex, "⚠️ No se pudo sincronizar QR para {Placa}", placa);
             }
         }
+        // =============================================
+        // QR — CREAR CLIENTE HTTP CON DIGEST AUTH
+        // Mismo patrón que AbrirBarrera: GET /System/status
+        // para forzar el challenge antes de POST/DELETE
+        // =============================================
+        // Extrae la raíz http://host de cualquier BaseUrl
+        // Ej: "http://192.168.1.130/ISAPI/AccessControl/RemoteControl/door/"
+        //   → "http://192.168.1.130"
+        private string ObtenerRaizControladora()
+        {
+            var uri = new Uri(_barrier.BaseUrl);
+            return $"{uri.Scheme}://{uri.Host}";
+        }
 
+        private async Task<HttpClient> CrearClienteHikvision()
+        {
+            var handler = new HttpClientHandler
+            {
+                Credentials = new NetworkCredential(_barrier.Username, _barrier.Password),
+                PreAuthenticate = true,
+                UseCookies = true,
+                CookieContainer = new CookieContainer()
+            };
+            var client = new HttpClient(handler)
+            {
+                Timeout = TimeSpan.FromSeconds(10)
+            };
+
+            // Forzar challenge Digest igual que hace AbrirBarrera
+            try
+            {
+                await client.GetAsync($"{ObtenerRaizControladora()}/System/status");
+            }
+            catch { }
+
+            return client;
+        }
+
+        // =============================================
+        // QR — REGISTRAR EN CONTROLADORA
+        // Paso 1: crear usuario  POST /ISAPI/AccessControl/UserInfo/Record
+        // Paso 2: asociar tarjeta POST /ISAPI/AccessControl/CardInfo/Record
+        // =============================================
         private async Task RegistrarQrEnControladora(int registroId, string qrToken)
         {
             if (!_barrier.UsarQR || string.IsNullOrEmpty(qrToken)) return;
+            if (_barrier.PuertaLectorQR == null || !_barrier.PuertaLectorQR.Any()) return;
 
             try
             {
-                var baseUrl = _barrier.BaseUrl
-                    .Replace("/AccessControl/RemoteControl/door/", "");
-                var endpoint = $"{baseUrl}/ISAPI/AccessControl/CardInfo/record";
-                var puerta = _barrier.PuertaLectorQR;
+                var baseUrl = ObtenerRaizControladora();
+                using var client = await CrearClienteHikvision();
+                var empNo = $"REG{registroId}";
 
-                var xml = $@"<?xml version=""1.0"" encoding=""UTF-8""?>
-<CardInfo>
-  <employeeNo>REG{registroId}</employeeNo>
-  <cardNo>{qrToken}</cardNo>
-  <cardType>normalCard</cardType>
-  <leaderCard>false</leaderCard>
-  <RightPlan>
-    <doorNo>{puerta}</doorNo>
-    <planTemplateNo>1</planTemplateNo>
-  </RightPlan>
-</CardInfo>";
+                // ── PASO 1: crear usuario con permiso en TODAS las puertas de salida ──
+                // La controladora abre SOLO la puerta donde se presenta el QR físicamente
+                var rightPlan = _barrier.PuertaLectorQR
+                    .Select(p => new { doorNo = p, planTemplateNo = "1" })
+                    .ToArray();
 
-                var handler = new HttpClientHandler
+                var userJson = System.Text.Json.JsonSerializer.Serialize(new
                 {
-                    Credentials = new NetworkCredential(_barrier.Username, _barrier.Password),
-                    PreAuthenticate = true
-                };
-                using var client = new HttpClient(handler);
-                var r = await client.PutAsync(endpoint,
-                    new StringContent(xml, Encoding.UTF8, "application/xml"));
+                    UserInfo = new
+                    {
+                        employeeNo = empNo,
+                        name = $"QR-REG{registroId}",
+                        userType = "normal",
+                        Valid = new
+                        {
+                            enable = true,
+                            beginTime = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss"),
+                            endTime = DateTime.Now.AddDays(2).ToString("yyyy-MM-ddTHH:mm:ss")
+                        },
+                        doorRight = "1",
+                        RightPlan = rightPlan
+                    }
+                });
 
-                _logger.LogInformation("📱 QR registrado en controladora: REG{Id} → {Status}",
-                    registroId, r.StatusCode);
+                var r1 = await client.PostAsync(
+                    $"{baseUrl}/ISAPI/AccessControl/UserInfo/Record?format=json",
+                    new StringContent(userJson, Encoding.UTF8, "application/json"));
+
+                var body1 = await r1.Content.ReadAsStringAsync();
+                _logger.LogInformation("📱 QR usuario creado: REG{Id} puertas=[{Puertas}] → {Status}",
+                    registroId,
+                    string.Join(",", _barrier.PuertaLectorQR),
+                    r1.StatusCode);
+
+                if (!r1.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning("⚠️ Error creando usuario QR REG{Id}: {Body}",
+                        registroId, body1);
+                    return;
+                }
+
+                // ── PASO 2: asociar tarjeta QR ──
+                var cardJson = System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    CardInfo = new
+                    {
+                        employeeNo = empNo,
+                        cardNo = qrToken,
+                        cardType = "normalCard"
+                    }
+                });
+
+                var r2 = await client.PostAsync(
+                    $"{baseUrl}/ISAPI/AccessControl/CardInfo/Record?format=json",
+                    new StringContent(cardJson, Encoding.UTF8, "application/json"));
+
+                var body2 = await r2.Content.ReadAsStringAsync();
+                _logger.LogInformation("📱 QR tarjeta asociada: REG{Id} → {Status}",
+                    registroId, r2.StatusCode);
+
+                if (!r2.IsSuccessStatusCode)
+                    _logger.LogWarning("⚠️ Error asociando tarjeta QR REG{Id}: {Body}",
+                        registroId, body2);
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "⚠️ No se pudo registrar QR en controladora para REG{Id}", registroId);
+                _logger.LogWarning(ex,
+                    "⚠️ No se pudo registrar QR en controladora para REG{Id}", registroId);
             }
         }
 
         // =============================================
         // QR — ELIMINAR DE CONTROLADORA AL SALIR
-        // Usa DELETE /ISAPI/AccessControl/CardInfo/record
+        // Paso 1: eliminar tarjeta DELETE /ISAPI/AccessControl/CardInfo/Record
+        // Paso 2: eliminar usuario  DELETE /ISAPI/AccessControl/UserInfo/Record
         // =============================================
         private async Task EliminarQrDeControladora(int registroId)
         {
@@ -691,37 +777,66 @@ namespace HikvisionApi.Services
 
             try
             {
-                var baseUrl = _barrier.BaseUrl
-                    .Replace("/AccessControl/RemoteControl/door/", "");
-                var endpoint = $"{baseUrl}/ISAPI/AccessControl/CardInfo/record";
+                var baseUrl = ObtenerRaizControladora();
 
-                var xml = $@"<?xml version=""1.0"" encoding=""UTF-8""?>
-<CardInfoDelCond>
-  <EmployeeNoList>
-    <employeeNo>REG{registroId}</employeeNo>
-  </EmployeeNoList>
-</CardInfoDelCond>";
+                using var client = await CrearClienteHikvision();
 
-                var handler = new HttpClientHandler
+                var empNo = $"REG{registroId}";
+
+                // ── PASO 1: eliminar tarjeta ─────────────────────────────
+                var cardDelJson = System.Text.Json.JsonSerializer.Serialize(new
                 {
-                    Credentials = new NetworkCredential(_barrier.Username, _barrier.Password),
-                    PreAuthenticate = true
-                };
-                using var client = new HttpClient(handler);
-                var req = new HttpRequestMessage(HttpMethod.Delete, endpoint)
-                {
-                    Content = new StringContent(xml, Encoding.UTF8, "application/xml")
-                };
-                var r = await client.SendAsync(req);
+                    CardInfoDelCond = new
+                    {
+                        EmployeeNoList = new[]
+                        {
+                            new { employeeNo = empNo }
+                        }
+                    }
+                });
 
-                _logger.LogInformation("🗑️ QR eliminado de controladora: REG{Id} → {Status}",
-                    registroId, r.StatusCode);
+                var req1 = new HttpRequestMessage(HttpMethod.Delete,
+                    $"{baseUrl}/ISAPI/AccessControl/CardInfo/Record?format=json")
+                {
+                    Content = new StringContent(cardDelJson, Encoding.UTF8, "application/json")
+                };
+                var r1 = await client.SendAsync(req1);
+                var body1 = await r1.Content.ReadAsStringAsync();
+
+                _logger.LogInformation("🗑️ QR tarjeta eliminada: REG{Id} → {Status} {Body}",
+                    registroId, r1.StatusCode, body1);
+
+                // ── PASO 2: eliminar usuario ─────────────────────────────
+                var userDelJson = System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    UserInfoDetail = new
+                    {
+                        mode = "byEmployeeNo",
+                        EmployeeNoList = new[]
+                        {
+                            new { employeeNo = empNo }
+                        }
+                    }
+                });
+
+                var req2 = new HttpRequestMessage(HttpMethod.Delete,
+                    $"{baseUrl}/ISAPI/AccessControl/UserInfo/Record?format=json")
+                {
+                    Content = new StringContent(userDelJson, Encoding.UTF8, "application/json")
+                };
+                var r2 = await client.SendAsync(req2);
+                var body2 = await r2.Content.ReadAsStringAsync();
+
+                _logger.LogInformation("🗑️ QR usuario eliminado: REG{Id} → {Status} {Body}",
+                    registroId, r2.StatusCode, body2);
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "⚠️ No se pudo eliminar QR de controladora para REG{Id}", registroId);
+                _logger.LogWarning(ex,
+                    "⚠️ No se pudo eliminar QR de controladora para REG{Id}", registroId);
             }
         }
+
 
         // =============================================
         // HELPERS
