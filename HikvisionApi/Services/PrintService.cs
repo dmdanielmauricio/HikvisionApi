@@ -47,7 +47,7 @@ namespace HikvisionApi.Services
                 mensajePie: ticket.MensajePie ?? "",
                 mensajeObservacion: ticket.MensajeObservacion ?? "",
                 placa: ticket.Placa ?? "",
-                tipoVehiculo: ticket.TipoVehiculo ?? "Vehículo",
+                tipoVehiculo: ticket.TipoVehiculo ?? "Veh\u00edculo",
                 fechaEntrada: DateTime.TryParse(ticket.FechaEntrada, out var dt) ? dt : DateTime.Now,
                 tarifa: ticket.Tarifa ?? "Normal",
                 esMensualidad: ticket.EsMensualidad,
@@ -59,11 +59,16 @@ namespace HikvisionApi.Services
 
         // =============================================
         // Fallback local (sin datos de ParkSky)
+        // CAMBIO: acepta qrToken opcional — generado localmente
+        // en EntradaParqueaderoNube con el mismo algoritmo del VPS,
+        // garantizando que el QR del tiquete coincida con el que se
+        // carga en K2600 al momento del cobro (registrar-qr).
         // =============================================
         public void ImprimirTiqueteLocal(
             string impresora, string placa, string tipoVehiculo,
             DateTime fechaEntrada, string carril, bool esMensualidad,
-            string? nombreConvenio = null)
+            string? nombreConvenio = null,
+            string? qrToken = null)
         {
             ImprimirTiquete(
                 impresora: impresora,
@@ -81,7 +86,7 @@ namespace HikvisionApi.Services
                 esMensualidad: esMensualidad,
                 nombreConvenio: nombreConvenio,
                 vigenciaFin: null,
-                qrToken: null
+                qrToken: qrToken
             );
         }
 
@@ -120,11 +125,9 @@ namespace HikvisionApi.Services
                     return;
                 }
 
-                // Papel térmico 80mm
                 doc.DefaultPageSettings.PaperSize = new PaperSize("Ticket", 283, 9999);
                 doc.DefaultPageSettings.Margins = new Margins(10, 10, 8, 8);
 
-                // QR bitmap (si hay token)
                 Bitmap? qrBitmap = null;
                 if (!string.IsNullOrEmpty(qrToken))
                 {
@@ -135,7 +138,7 @@ namespace HikvisionApi.Services
                 {
                     var g = e.Graphics!;
                     float y = 6f;
-                    float w = 263f; // ancho útil (283 - 20 márgenes)
+                    float w = 263f;
                     float x = 10f;
 
                     var sfC = new StringFormat { Alignment = StringAlignment.Center };
@@ -145,8 +148,6 @@ namespace HikvisionApi.Services
                     var gris = new SolidBrush(Color.FromArgb(68, 68, 68));
                     var grisC = new SolidBrush(Color.FromArgb(153, 153, 153));
 
-                    // Fuentes — replica Inter + JetBrains Mono
-                    // (usa Arial/Consolas disponibles en Windows)
                     var fNomPark = new Font("Arial", 14f, FontStyle.Bold);
                     var fInfo = new Font("Arial", 8.5f, FontStyle.Bold);
                     var fBadge = new Font("Arial", 8f, FontStyle.Bold);
@@ -158,14 +159,12 @@ namespace HikvisionApi.Services
                     var fFooter = new Font("Arial", 11f, FontStyle.Bold);
                     var fTag = new Font("Arial", 6.5f, FontStyle.Bold);
 
-                    // ── MENSAJE ENCABEZADO ──
                     if (!string.IsNullOrEmpty(mensajeEncabezado))
                     {
                         g.DrawString(mensajeEncabezado, fInfo, gris,
                             new RectangleF(x, y, w, 14), sfC); y += 14;
                     }
 
-                    // ── NOMBRE PARQUEADERO ──
                     g.DrawString(nombreParqueadero.ToUpper(), fNomPark, negro,
                         new RectangleF(x, y, w, 22), sfC); y += 22;
 
@@ -185,20 +184,16 @@ namespace HikvisionApi.Services
                             new RectangleF(x, y, w, 13), sfC); y += 13;
                     }
 
-                    // ── BADGE "TICKET DE ENTRADA" ──
                     y += 6;
                     var badgeW = 140f; var badgeH = 18f;
                     var badgeX = x + (w - badgeW) / 2;
-                    g.FillRectangle(Brushes.Black,
-                        new RectangleF(badgeX, y, badgeW, badgeH));
+                    g.FillRectangle(Brushes.Black, new RectangleF(badgeX, y, badgeW, badgeH));
                     g.DrawString("TICKET DE ENTRADA", fBadge, Brushes.White,
                         new RectangleF(badgeX, y + 2, badgeW, badgeH - 2), sfC);
                     y += badgeH + 8;
 
-                    // ── DIVIDER ──
                     g.DrawLine(Pens.Black, x, y, x + w, y); y += 8;
 
-                    // ── PLACA BOX (fondo gris claro) ──
                     var plBoxH = 56f;
                     g.FillRectangle(new SolidBrush(Color.FromArgb(240, 240, 240)),
                         new RectangleF(x, y, w, plBoxH));
@@ -209,7 +204,6 @@ namespace HikvisionApi.Services
                         new RectangleF(x, y + 18, w, 34), sfC);
                     y += plBoxH + 8;
 
-                    // ── DETALLES (líneas con separador) ──
                     void Detalle(string label, string value)
                     {
                         g.DrawString(label, fLabel, new SolidBrush(Color.FromArgb(51, 51, 51)), x + 2, y);
@@ -226,7 +220,6 @@ namespace HikvisionApi.Services
                     Detalle("Tarifa", tarifa);
                     y += 4;
 
-                    // ── CONVENIO (si aplica) ──
                     if (esMensualidad && !string.IsNullOrEmpty(nombreConvenio))
                     {
                         var boxH = 56f;
@@ -257,7 +250,6 @@ namespace HikvisionApi.Services
                         y += boxH + 8;
                     }
 
-                    // ── QR ──
                     if (qrBitmap != null)
                     {
                         float qrSize = 110f;
@@ -270,17 +262,14 @@ namespace HikvisionApi.Services
                         y += 14;
                     }
 
-                    // ── DIVIDER ──
                     g.DrawLine(Pens.Black, x, y, x + w, y); y += 8;
 
-                    // ── OBSERVACIONES ──
                     if (!string.IsNullOrEmpty(mensajeObservacion))
                     {
                         g.DrawString(mensajeObservacion, fInfo, gris,
                             new RectangleF(x, y, w, 28), sfC); y += 30;
                     }
 
-                    // ── FOOTER ──
                     g.DrawString("¡BIENVENIDO!", fFooter, negro,
                         new RectangleF(x, y, w, 20), sfC); y += 22;
 
@@ -308,7 +297,6 @@ namespace HikvisionApi.Services
         // =============================================
         private static Bitmap GenerarQR(string contenido, int pixeles)
         {
-            // QRCoder nuget: Install-Package QRCoder
             var qrGenerator = new QRCoder.QRCodeGenerator();
             var qrData = qrGenerator.CreateQrCode(contenido,
                 QRCoder.QRCodeGenerator.ECCLevel.M);

@@ -65,8 +65,23 @@ builder.Services.Configure<ImpresorasSettings>(
 builder.Services.AddHttpClient<ParkSkyClient>();
 builder.Services.AddScoped<HikvisionService>();
 builder.Services.AddSingleton<PrintService>();
-builder.Services.AddControllers();
 
+// ── NUEVO: LocalCacheService ─────────────────────────────────
+// Singleton con caché en memoria de restringidos + convenios.
+// El segundo registro (AddHostedService) hace que ASP.NET Core
+// llame StartAsync al arrancar → caché cargado antes del primer
+// request de cámara.
+builder.Services.AddSingleton<LocalCacheService>();
+builder.Services.AddHostedService(sp =>
+    sp.GetRequiredService<LocalCacheService>());
+
+// ── NUEVO: SyncBackgroundService ─────────────────────────────
+// BackgroundService que sincroniza EventosLocales al VPS cada 5s.
+// Crea su propio scope por ciclo → DbContext y ParkSkyClient
+// siempre frescos, sin riesgo de ObjectDisposed.
+builder.Services.AddHostedService<SyncBackgroundService>();
+
+builder.Services.AddControllers();
 builder.WebHost.ConfigureKestrel(opts =>
     opts.Limits.MaxRequestBodySize = 50 * 1024 * 1024);
 
@@ -87,18 +102,18 @@ if (Directory.Exists(anprFolder))
 
 app.UseRouting();
 app.MapControllers();
-
 app.MapGet("/status", (IConfiguration config) => new
 {
     ok = true,
     app = "HikvisionApi",
-    version = "2.0",
+    version = "3.0",
     hora = DateTime.Now.ToString("dd/MM/yyyy HH:mm:ss"),
     modo = config["ModoOperacion"] ?? "—",
     fuenteDatos = config["Parqueadero:FuenteDatos"] ?? config["Porteria:FuenteDatos"] ?? "—",
     parkSkyUrl = config["ParkSkySettings:ApiUrl"] ?? "—",
     barrera = config["BarrierSettings:BaseUrl"] ?? "—",
-    anprFolder = config["AnprSettings:TargetFolder"] ?? "—"
+    anprFolder = config["AnprSettings:TargetFolder"] ?? "—",
+    arquitectura = "local-first (caché + EventosLocales + SyncBackgroundService)"
 });
 
 app.Run();

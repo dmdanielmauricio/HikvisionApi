@@ -14,10 +14,12 @@ namespace HikvisionApi.Data
         public DbSet<RegistroLocal> Registros { get; set; }
         public DbSet<ConvenioLocal> ConveniosMensualidad { get; set; }
         public DbSet<ConvenioVehiculoLocal> ConveniosVehiculos { get; set; }
+        public DbSet<EventoLocal> EventosLocales => Set<EventoLocal>();
+        public DbSet<PagoConfirmado>  PagosConfirmados => Set<PagoConfirmado>();
         public DbSet<PatronPlacaLocal> PatronPlacas { get; set; }
         public DbSet<TarifaLocal> Tarifas { get; set; }
         public DbSet<VehiculoRestringidoLocal> VehiculosRestringidos { get; set; }
-
+   
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             // Mapear nombres de tabla exactos de ParkSky

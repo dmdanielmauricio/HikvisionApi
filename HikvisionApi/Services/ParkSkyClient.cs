@@ -49,11 +49,17 @@ namespace HikvisionApi.Services
 
         // =============================================
         // REGISTRAR INGRESO
+        // CAMBIO: agrega qrToken opcional — generado localmente en EntradaParqueaderoNube
+        // con el mismo algoritmo que usa el VPS. El VPS lo recibe y, si no es null,
+        // lo usa como QrToken del RegistroParqueo en lugar de generar uno propio.
+        // Esto garantiza que el QR del tiquete de entrada coincida con el que se
+        // carga en K2600 al cobrar (via /api/print/registrar-qr).
         // =============================================
         public async Task<IngresoResponse> RegistrarIngresoAsync(
             string placa, string carril, string carrilNombre,
             bool esMensualidad, int? convenioId, string? imagenUrl,
-            string? tipoVehiculo = null)
+            string? tipoVehiculo = null,
+            string? qrToken = null)
         {
             try
             {
@@ -65,7 +71,8 @@ namespace HikvisionApi.Services
                     esMensualidad,
                     convenioId,
                     imagenUrl,
-                    tipoVehiculo
+                    tipoVehiculo,
+                    qrToken
                 });
                 var r = await _http.PostAsync("api/hikvision/procesar-entrada",
                     new StringContent(body, Encoding.UTF8, "application/json"));
@@ -130,9 +137,6 @@ namespace HikvisionApi.Services
         }
 
         // =============================================
-        // HELPER
-        // =============================================
-        // =============================================
         // ENVIAR IMAGEN AL VPS (Base64 temporal)
         // =============================================
         public async Task<string?> EnviarImagenAsync(
@@ -153,7 +157,7 @@ namespace HikvisionApi.Services
                 if (r.IsSuccessStatusCode)
                 {
                     var json = await r.Content.ReadAsStringAsync();
-                    _logger.LogInformation("📤 ImgVPS respuesta: {Json}", json);
+                    _logger.LogInformation("\ud83d\udce4 ImgVPS respuesta: {Json}", json);
                     var obj = JsonSerializer.Deserialize<JsonElement>(json);
                     if (obj.TryGetProperty("id", out var idProp))
                     {
@@ -161,12 +165,12 @@ namespace HikvisionApi.Services
                         var baseUrl = _settings.ApiUrl.TrimEnd('/');
                         return $"{baseUrl}/api/hikvision/imagen/{id}";
                     }
-                    _logger.LogWarning("📤 ImgVPS sin 'id' en respuesta: {Json}", json);
+                    _logger.LogWarning("\ud83d\udce4 ImgVPS sin 'id' en respuesta: {Json}", json);
                 }
                 else
                 {
                     var err = await r.Content.ReadAsStringAsync();
-                    _logger.LogWarning("📤 ImgVPS error {Status}: {Err}", r.StatusCode, err);
+                    _logger.LogWarning("\ud83d\udce4 ImgVPS error {Status}: {Err}", r.StatusCode, err);
                 }
             }
             catch (Exception ex)
@@ -176,11 +180,33 @@ namespace HikvisionApi.Services
             return null;
         }
 
-        /// GET simple — devuelve JSON crudo. Para endpoints de lectura rápida.
+        /// GET simple — devuelve JSON crudo. Para endpoints de lectura r\u00e1pida.
         public async Task<string> GetRawAsync(string relativeUrl)
         {
             var r = await _http.GetAsync(relativeUrl);
             return await r.Content.ReadAsStringAsync();
+        }
+
+        // =============================================
+        // PAGOS RECIENTES — polling para PagosConfirmados local
+        // Reemplaza la llamada browser→local (bloqueada por CSP y mixed content).
+        // SyncBackgroundService llama esto cada ciclo y puebla PagosConfirmados.
+        // =============================================
+        public async Task<List<PagoRecienteDto>> GetPagosRecientesAsync(DateTime desde)
+        {
+            try
+            {
+                var url = $"api/hikvision/pagos-recientes?desde={desde:o}";
+                var r = await _http.GetAsync(url);
+                var json = await r.Content.ReadAsStringAsync();
+                var resp = Deserializar<PagosRecientesResponse>(json);
+                return resp?.Pagos ?? new List<PagoRecienteDto>();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "No se pudieron obtener pagos recientes del VPS");
+                return new List<PagoRecienteDto>();
+            }
         }
 
         private static T? Deserializar<T>(string json)
@@ -249,5 +275,21 @@ namespace HikvisionApi.Services
         public string? NombreConvenio { get; set; }
         public string? VigenciaFin { get; set; }
         public string? QrToken { get; set; }
+    }
+
+    // Respuesta de GET /api/hikvision/pagos-recientes
+    public class PagoRecienteDto
+    {
+        public string Placa { get; set; } = "";
+        public int RegistroId { get; set; }
+        public decimal ValorPagado { get; set; }
+        public DateTime FechaPago { get; set; }
+        public string? QrToken { get; set; }
+    }
+
+    public class PagosRecientesResponse
+    {
+        public bool Ok { get; set; }
+        public List<PagoRecienteDto>? Pagos { get; set; }
     }
 }
