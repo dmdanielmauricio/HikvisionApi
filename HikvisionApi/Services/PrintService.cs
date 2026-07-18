@@ -59,26 +59,33 @@ namespace HikvisionApi.Services
 
         // =============================================
         // Fallback local (sin datos de ParkSky)
-        // CAMBIO: acepta qrToken opcional — generado localmente
-        // en EntradaParqueaderoNube con el mismo algoritmo del VPS,
-        // garantizando que el QR del tiquete coincida con el que se
-        // carga en K2600 al momento del cobro (registrar-qr).
+        // CAMBIO: acepta ConfiguracionLocal? — datos reales del parqueadero
+        // (nombre, NIT, dirección, teléfono, mensajes) leídos de la tabla
+        // Configuraciones local, en vez de los valores fijos que había
+        // antes ("PARQUEADERO", campos vacíos). Si config es null o algún
+        // campo viene vacío, cae a los mismos valores por defecto de
+        // siempre — nunca deja el tiquete con un hueco en blanco raro.
+        // qrToken sigue igual: generado localmente en EntradaParqueaderoNube
+        // con el mismo algoritmo del VPS.
         // =============================================
         public void ImprimirTiqueteLocal(
             string impresora, string placa, string tipoVehiculo,
             DateTime fechaEntrada, string carril, bool esMensualidad,
+            ConfiguracionLocal? config = null,
             string? nombreConvenio = null,
             string? qrToken = null)
         {
             ImprimirTiquete(
                 impresora: impresora,
-                nombreParqueadero: "PARQUEADERO",
-                nit: "",
-                direccion: "",
-                telefono: "",
-                mensajeEncabezado: "",
-                mensajePie: "Conserve este tiquete para su salida",
-                mensajeObservacion: "",
+                nombreParqueadero: !string.IsNullOrWhiteSpace(config?.NombreParqueadero)
+                    ? config.NombreParqueadero : "PARQUEADERO",
+                nit: config?.Nit ?? "",
+                direccion: config?.Direccion ?? "",
+                telefono: config?.Telefono ?? "",
+                mensajeEncabezado: config?.MensajeEncabezado ?? "",
+                mensajePie: !string.IsNullOrWhiteSpace(config?.MensajePie)
+                    ? config.MensajePie : "Conserve este tiquete para su salida",
+                mensajeObservacion: config?.MensajeObservacion ?? "",
                 placa: placa,
                 tipoVehiculo: tipoVehiculo,
                 fechaEntrada: fechaEntrada,

@@ -1,13 +1,11 @@
 ﻿using HikvisionApi.Models;
 using Microsoft.EntityFrameworkCore;
-
 namespace HikvisionApi.Data
 {
     public class AppDbContext : DbContext
     {
         public AppDbContext(DbContextOptions<AppDbContext> options)
             : base(options) { }
-
         // Tablas principales de ParqueaderoDB
         public DbSet<Vehiculo> Vehiculos { get; set; }
         public DbSet<AccesoVehicular> AccesosVehiculares { get; set; }
@@ -15,11 +13,12 @@ namespace HikvisionApi.Data
         public DbSet<ConvenioLocal> ConveniosMensualidad { get; set; }
         public DbSet<ConvenioVehiculoLocal> ConveniosVehiculos { get; set; }
         public DbSet<EventoLocal> EventosLocales => Set<EventoLocal>();
-        public DbSet<PagoConfirmado>  PagosConfirmados => Set<PagoConfirmado>();
+        public DbSet<PagoConfirmado> PagosConfirmados => Set<PagoConfirmado>();
         public DbSet<PatronPlacaLocal> PatronPlacas { get; set; }
         public DbSet<TarifaLocal> Tarifas { get; set; }
         public DbSet<VehiculoRestringidoLocal> VehiculosRestringidos { get; set; }
-   
+        public DbSet<ConfiguracionLocal> Configuraciones { get; set; }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             // Mapear nombres de tabla exactos de ParkSky
@@ -29,6 +28,7 @@ namespace HikvisionApi.Data
             modelBuilder.Entity<VehiculoRestringidoLocal>().ToTable("VehiculosRestringidos");
             modelBuilder.Entity<PatronPlacaLocal>().ToTable("PatronPlacas");
             modelBuilder.Entity<TarifaLocal>().ToTable("Tarifas");
+            modelBuilder.Entity<ConfiguracionLocal>().ToTable("Configuraciones");
         }
     }
 }

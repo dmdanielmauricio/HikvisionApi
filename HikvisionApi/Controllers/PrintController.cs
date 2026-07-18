@@ -1,6 +1,8 @@
 ﻿using HikvisionApi.Config;
+using HikvisionApi.Data;
 using HikvisionApi.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 namespace HikvisionApi.Controllers
@@ -10,20 +12,20 @@ namespace HikvisionApi.Controllers
     public class PrintController : ControllerBase
     {
         private readonly PrintService _print;
-        private readonly ParkSkyClient _parkSky;
+        private readonly AppDbContext _db;
         private readonly IConfiguration _config;
         private readonly HikvisionService _hikvisionService;
         private readonly ILogger<PrintController> _logger;
 
         public PrintController(
             PrintService print,
-            ParkSkyClient parkSky,
+            AppDbContext db,
             IConfiguration config,
             HikvisionService hikvisionService,
             ILogger<PrintController> logger)
         {
             _print = print;
-            _parkSky = parkSky;
+            _db = db;
             _config = config;
             _hikvisionService = hikvisionService;
             _logger = logger;
@@ -33,6 +35,10 @@ namespace HikvisionApi.Controllers
         // POST /api/print/ticket
         // Llamado por ParkSky VPS después del ingreso
         // Imprime directo en impresora local sin pantalla
+        // CAMBIO: 100% local — ya no llama a ParkSky para pedir los datos
+        // del tiquete. Busca el registro directo en la copia local de
+        // Registros (misma base, mismas filas, mismos Id) para que el
+        // proceso sea rápido y no dependa de la conexión al VPS.
         // =============================================
         [HttpPost("ticket")]
         public async Task<IActionResult> ImprimirTicket([FromBody] PrintTicketDto dto)
@@ -48,11 +54,14 @@ namespace HikvisionApi.Controllers
 
             try
             {
-                // Obtener datos del ticket desde ParkSky
-                var ticket = await _parkSky.ObtenerTicketAsync(dto.RegistroId);
+                var registro = await _db.Registros
+                    .Include(r => r.Vehiculo)
+                    .FirstOrDefaultAsync(r => r.Id == dto.RegistroId);
 
-                if (ticket == null || !ticket.Ok)
-                    return NotFound(new { ok = false, mensaje = "Ticket no encontrado" });
+                if (registro == null || registro.Vehiculo == null)
+                    return NotFound(new { ok = false, mensaje = "Registro no encontrado localmente" });
+
+                var config = await _db.Configuraciones.FirstOrDefaultAsync();
 
                 // Determinar impresora por carril
                 var lane = dto.Lane ?? "1";
@@ -62,10 +71,12 @@ namespace HikvisionApi.Controllers
                 if (!string.IsNullOrEmpty(dto.Impresora))
                     impresora = dto.Impresora;
 
-                _logger.LogInformation("🖨️ Imprimiendo ticket {Id} en {Imp}", dto.RegistroId, impresora);
+                _logger.LogInformation("🖨️ Imprimiendo ticket {Id} en {Imp} (100% local)", dto.RegistroId, impresora);
 
-                // Imprimir directamente sin pantalla
-                _print.ImprimirDesdeTicket(impresora, ticket);
+                _print.ImprimirTiqueteLocal(
+                    impresora, registro.Vehiculo.Placa, registro.Vehiculo.Tipo,
+                    registro.FechaEntrada, lane, registro.EsMensualidad,
+                    config, qrToken: registro.QrToken);
 
                 return Ok(new { ok = true, mensaje = $"Impreso en {impresora}" });
             }

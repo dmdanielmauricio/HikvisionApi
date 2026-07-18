@@ -83,43 +83,43 @@ namespace HikvisionApi.Services
         }
 
         // =============================================
-        // PROCESAR ACCESO \u2014 entrada principal
+        // PROCESAR ACCESO — entrada principal
         // =============================================
         public async Task ProcesarAcceso(
             string placa, string lane, string absTime,
             IFormFile? plateImage, IFormFile? fullImage)
         {
-            _logger.LogInformation("\ud83d\udcf8 {Placa} carril {Lane} modo {Modo}", placa, lane, _modo);
+            _logger.LogInformation("📸 {Placa} carril {Lane} modo {Modo}", placa, lane, _modo);
 
-            // \u2500\u2500 FILTRO DE PLACA \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-            // 1. Descartar placas no reconocidas por la c\u00e1mara
+            // ── FILTRO DE PLACA ──────────────────────────────────────────
+            // 1. Descartar placas no reconocidas por la cámara
             if (_anpr.PlacasDescartadas.Any(d =>
                     placa.Equals(d, StringComparison.OrdinalIgnoreCase) ||
                     placa.Contains(d, StringComparison.OrdinalIgnoreCase)))
             {
-                _logger.LogWarning("\ud83d\udeab Placa descartada (no reconocida): {Placa}", placa);
+                _logger.LogWarning("🚫 Placa descartada (no reconocida): {Placa}", placa);
                 return;
             }
             // 2. Descartar lecturas parciales o muy cortas
             if (placa.Length < _anpr.LongitudMinimaPlaca)
             {
-                _logger.LogWarning("\ud83d\udeab Placa descartada (muy corta {Len} chars): {Placa}",
+                _logger.LogWarning("🚫 Placa descartada (muy corta {Len} chars): {Placa}",
                     placa.Length, placa);
                 return;
             }
-            // 3. Validar que la placa tenga solo caracteres v\u00e1lidos (letras y n\u00fameros)
+            // 3. Validar que la placa tenga solo caracteres válidos (letras y números)
             if (!placa.All(c => char.IsLetterOrDigit(c)))
             {
-                _logger.LogWarning("\ud83d\udeab Placa descartada (caracteres inv\u00e1lidos): {Placa}", placa);
+                _logger.LogWarning("🚫 Placa descartada (caracteres inválidos): {Placa}", placa);
                 return;
             }
 
-            // 4. Validar formato colombiano \u2014 descartar si no coincide con ning\u00fan
-            //    patr\u00f3n personalizado ni con los formatos est\u00e1ndar
+            // 4. Validar formato colombiano — descartar si no coincide con ningún
+            //    patrón personalizado ni con los formatos estándar
             var tipoDetectado = DetectarTipoPlacaColombia(placa);
             if (tipoDetectado == null)
             {
-                // Verificar si coincide con alg\u00fan patr\u00f3n personalizado en BD
+                // Verificar si coincide con algún patrón personalizado en BD
                 bool tienePatronPersonalizado = false;
                 try
                 {
@@ -133,21 +133,21 @@ namespace HikvisionApi.Services
 
                 if (!tienePatronPersonalizado)
                 {
-                    _logger.LogWarning("\ud83d\udeab Placa descartada (formato no reconocido): {Placa}", placa);
+                    _logger.LogWarning("🚫 Placa descartada (formato no reconocido): {Placa}", placa);
                     return;
                 }
             }
-            // \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+            // ─────────────────────────────────────────────────────────────
 
             if (string.IsNullOrEmpty(absTime) || absTime.Length < 17)
                 absTime = DateTime.Now.ToString("yyyyMMddHHmmssfff");
 
-            // GuardarImagenes guarda local de forma S\u00cdNCRONA (r\u00e1pido) y arranca
-            // la subida al VPS SIN esperarla \u2014 devuelve la Task ya en marcha.
+            // GuardarImagenes guarda local de forma SÍNCRONA (rápido) y arranca
+            // la subida al VPS SIN esperarla — devuelve la Task ya en marcha.
             // Quien necesite la URL la awaitea en su momento (ver EntradaParqueaderoNube).
             var imagenUrlTask = await GuardarImagenes(placa, lane, absTime, plateImage, fullImage);
 
-            // Determinar entrada/salida seg\u00fan configuraci\u00f3n en appsettings
+            // Determinar entrada/salida según configuración en appsettings
             bool esEntrada;
             if (_anpr.CarrilesEntrada.Contains(lane))
                 esEntrada = true;
@@ -155,9 +155,9 @@ namespace HikvisionApi.Services
                 esEntrada = false;
             else
             {
-                // Lane no configurado \u2014 impar=entrada, par=salida
+                // Lane no configurado — impar=entrada, par=salida
                 esEntrada = int.TryParse(lane, out int n) ? n % 2 != 0 : true;
-                _logger.LogWarning("\u26a0\ufe0f Carril {Lane} no configurado en appsettings \u2014 asumiendo {Tipo}",
+                _logger.LogWarning("⚠️ Carril {Lane} no configurado en appsettings — asumiendo {Tipo}",
                     lane, esEntrada ? "ENTRADA" : "SALIDA");
             }
 
@@ -188,40 +188,35 @@ namespace HikvisionApi.Services
         }
 
         // =============================================
-        // PORTER\u00cdA \u2014 local o nube
+        // PORTERÍA — local o nube
         // =============================================
         private async Task ProcesarPorteria(
             string placa, string lane, Task<string> imagenUrlTask,
             string carrilNombre, bool esEntrada)
         {
-            // Sin cambios de comportamiento: Porter\u00eda no tiene el problema de
-            // throughput reportado, as\u00ed que sigue esperando la imagen aqu\u00ed
-            // mismo, igual que antes.
             var imagenUrl = await imagenUrlTask;
             string tipo = esEntrada ? "ENTRADA" : "SALIDA";
             bool autorizado;
 
             if (_porteria.FuenteDatos == "Local")
             {
-                // Validar contra BD local
                 var vehiculo = await _db.Vehiculos
                     .FirstOrDefaultAsync(v => v.Placa == placa);
                 autorizado = vehiculo != null && vehiculo.Activo;
 
-                _logger.LogInformation("Porter\u00eda LOCAL: {Placa} \u2192 {Auth}", placa, autorizado);
+                _logger.LogInformation("Portería LOCAL: {Placa} → {Auth}", placa, autorizado);
             }
             else
             {
-                // Validar contra ParkSky nube
                 try
                 {
                     var conv = await _parkSky.ValidarConvenioAsync(placa);
                     autorizado = conv.TieneConvenio && conv.Activo;
-                    _logger.LogInformation("Porter\u00eda NUBE: {Placa} \u2192 {Auth}", placa, autorizado);
+                    _logger.LogInformation("Portería NUBE: {Placa} → {Auth}", placa, autorizado);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Sin internet \u2014 porter\u00eda nube fallback");
+                    _logger.LogWarning(ex, "Sin internet — portería nube fallback");
                     autorizado = _porteria.AbrirSiSinInternet;
                 }
             }
@@ -232,7 +227,7 @@ namespace HikvisionApi.Services
             if (autorizado)
                 await EjecutarApertura(lane, tipo);
             else
-                _logger.LogWarning("\u26d4 Porter\u00eda: {Placa} NO autorizado", placa);
+                _logger.LogWarning("⛔ Portería: {Placa} NO autorizado", placa);
         }
 
         // =============================================
@@ -258,20 +253,16 @@ namespace HikvisionApi.Services
             string placa, string lane, Task<string> imagenUrlTask,
             string carrilNombre, string impresora)
         {
-            // Sin cambios de comportamiento: FuenteDatos=Local no es el modo
-            // activo en producci\u00f3n y no tiene el problema reportado.
             var imagenUrl = await imagenUrlTask;
 
             if (_parqueadero.AbrirTodo)
             {
-                // Registrar en BD local y abrir
                 await RegistrarIngresoLocal(placa, lane, false, null);
                 await RegistrarAccesoLocal(placa, lane, "ENTRADA", true, "ABRE_TODO", "LIBRE", imagenUrl);
                 await EjecutarApertura(lane, "ENTRADA");
                 return;
             }
 
-            // Validar convenio en BD local
             var convenio = await _db.ConveniosVehiculos
                 .Include(cv => cv.ConvenioMensualidad)
                 .FirstOrDefaultAsync(cv =>
@@ -287,13 +278,22 @@ namespace HikvisionApi.Services
             }
             else
             {
-                // Casual \u2014 imprimir tiquete
                 await RegistrarIngresoLocal(placa, lane, false, null);
                 await RegistrarAccesoLocal(placa, lane, "ENTRADA", true, "CASUAL", "CASUAL", imagenUrl);
 
                 if (_parqueadero.EntregarTiquete && !string.IsNullOrEmpty(impresora))
-                    _print.ImprimirTiqueteLocal(impresora, placa, "Veh\u00edculo",
-                        DateTime.Now, carrilNombre, false);
+                {
+                    var configTiquete = await ObtenerConfiguracionLocal();
+                    _print.ImprimirTiqueteLocal(impresora, placa, "Vehículo",
+                        DateTime.Now, carrilNombre, false, configTiquete);
+                }
+                else if (_parqueadero.EntregarTiquete)
+                {
+                    _logger.LogWarning(
+                        "⚠️ No se imprimió tiquete para {Placa} — impresora vacía o no configurada " +
+                        "para carril {Lane} ({Carril}). Revisar clave Impresoras en appsettings.json.",
+                        placa, lane, carrilNombre);
+                }
 
                 await EjecutarApertura(lane, "ENTRADA");
             }
@@ -306,42 +306,20 @@ namespace HikvisionApi.Services
         {
             var tipoVehiculo = DetectarTipoVehiculo(placa);
             var horaEntrada = DateTime.Now;
-            _logger.LogInformation("\ud83d\ude97 Entrada \u2014 Placa:{Placa} Tipo:{Tipo} Lane:{Lane}",
+            _logger.LogInformation("🚗 Entrada — Placa:{Placa} Tipo:{Tipo} Lane:{Lane}",
                 placa, tipoVehiculo, lane);
 
             // Generar QrToken local — mismo algoritmo que VPS ControlController.GenerarQrToken.
-            // Garantiza que el QR del tiquete coincida con el token que al cobrar
-            // se carga en la K2600 vía /api/print/registrar-qr.
-            // Se incluye en EventoLocal para que SyncBackgroundService lo envíe al VPS
-            // y el RegistroParqueo quede con el mismo token.
             const string qrChars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
             var qrBytes = new byte[4];
             System.Security.Cryptography.RandomNumberGenerator.Fill(qrBytes);
             var qrTokenLocal = $"{placa}-{horaEntrada:yyyyMMdd}-{horaEntrada:HHmmss}-" +
                 new string(qrBytes.Select(b => qrChars[b % qrChars.Length]).ToArray());
 
-            // ════════════════════════════════════════════════════════════════
-            // NUEVA RUTA CRÍTICA — caché en memoria + HTTP LAN a controladora
-            // Sin SQL, sin VPS en el camino síncrono.
-            //
-            // LocalCacheService (Singleton) mantiene en memoria:
-            //   - Placas restringidas (HashSet, refresh 60s)
-            //   - Convenios activos por placa (Dictionary, refresh 60s)
-            // Las dos consultas que antes eran SQL (~100ms cada una) son
-            // ahora O(1) sin red ni I/O — 0ms.
-            //
-            // EncolarEvento escribe en EventosLocales usando scope propio
-            // (IServiceScopeFactory) → el DbContext del request no se
-            // captura en background, eliminando el riesgo de ObjectDisposed.
-            //
-            // SyncBackgroundService sincroniza EventosLocales al VPS c/5s.
-            // El tiquete se imprime cuando el VPS confirma el RegistroId.
-            // ════════════════════════════════════════════════════════════════
-
             // 1. Restringido → caché, 0ms
             if (_cache.EsRestringido(placa))
             {
-                _logger.LogWarning("\ud83d\udeab Restringido bloqueado (caché): {Placa}", placa);
+                _logger.LogWarning("🚫 Restringido bloqueado (caché): {Placa}", placa);
                 EncolarEvento(placa, lane, carrilNombre, "ENTRADA", false,
                     "RESTRINGIDO", tipoVehiculo, false, null, imagenUrlTask);
                 return;
@@ -357,22 +335,39 @@ namespace HikvisionApi.Services
                 EncolarEvento(placa, lane, carrilNombre, "ENTRADA", false,
                     "ESPERANDO_TIQUETE", tipoVehiculo, false, null, imagenUrlTask, qrTokenLocal);
                 if (_parqueadero.EntregarTiquete && !string.IsNullOrEmpty(impresora))
+                {
+                    var configTiquete = await ObtenerConfiguracionLocal();
                     _print.ImprimirTiqueteLocal(impresora, placa, tipoVehiculo,
-                        horaEntrada, carrilNombre, false, qrToken: qrTokenLocal);
+                        horaEntrada, carrilNombre, false, configTiquete, qrToken: qrTokenLocal);
+                }
+                else if (_parqueadero.EntregarTiquete)
+                {
+                    _logger.LogWarning(
+                        "⚠️ No se imprimió tiquete para {Placa} — impresora vacía o no configurada " +
+                        "para carril {Lane} ({Carril}). Revisar clave Impresoras en appsettings.json.",
+                        placa, lane, carrilNombre);
+                }
                 return;
             }
 
             // 3. ABRIR BARRERA — único paso de red en el camino síncrono (~50ms LAN)
             await EjecutarApertura(lane, "ENTRADA");
-            _logger.LogInformation("\u2705 Barrera abierta: {Placa} ({Motivo})", placa, motivo);
+            _logger.LogInformation("✅ Barrera abierta: {Placa} ({Motivo})", placa, motivo);
 
             // 4. Imprimir tiquete INMEDIATAMENTE con datos locales.
-            //    El QR del tiquete de entrada es solo informativo — el QR que
-            //    activa la talanquera de salida se carga en K2600 al momento del
-            //    cobro (registrar-qr), no aquí. No hay razón para esperar al VPS.
             if (_parqueadero.EntregarTiquete && !string.IsNullOrEmpty(impresora))
+            {
+                var configTiquete = await ObtenerConfiguracionLocal();
                 _print.ImprimirTiqueteLocal(impresora, placa, tipoVehiculo,
-                    horaEntrada, carrilNombre, tieneConvenio, qrToken: qrTokenLocal);
+                    horaEntrada, carrilNombre, tieneConvenio, configTiquete, qrToken: qrTokenLocal);
+            }
+            else if (_parqueadero.EntregarTiquete)
+            {
+                _logger.LogWarning(
+                    "⚠️ No se imprimió tiquete para {Placa} — impresora vacía o no configurada " +
+                    "para carril {Lane} ({Carril}). Revisar clave Impresoras en appsettings.json.",
+                    placa, lane, carrilNombre);
+            }
 
             // 5. Encolar evento (background, scope propio, nunca bloquea)
             EncolarEvento(placa, lane, carrilNombre, "ENTRADA", true,
@@ -380,10 +375,27 @@ namespace HikvisionApi.Services
         }
 
         // ════════════════════════════════════════════════════════════════
+        // CONFIGURACIÓN LOCAL — para imprimir con los datos reales del
+        // parqueadero (nombre, NIT, dirección, teléfono, mensajes), leídos
+        // de la tabla Configuraciones local (copia exacta de la del VPS).
+        // Falla silenciosa: si la BD local no responde, ImprimirTiqueteLocal
+        // ya sabe caer a los valores por defecto de siempre con config=null.
+        // ════════════════════════════════════════════════════════════════
+        private async Task<ConfiguracionLocal?> ObtenerConfiguracionLocal()
+        {
+            try
+            {
+                return await _db.Configuraciones.FirstOrDefaultAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "⚠️ No se pudo leer Configuraciones local — usando valores por defecto");
+                return null;
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════════
         // ENCOLAR EVENTO — inserta en EventosLocales con scope propio.
-        // Fire-and-forget seguro: IServiceScopeFactory crea su propio
-        // DbContext independiente del scope del request (que puede estar
-        // disposed cuando el Task.Run ejecute).
         // ════════════════════════════════════════════════════════════════
         private void EncolarEvento(
             string placa, string carril, string? carrilNombre,
@@ -394,10 +406,6 @@ namespace HikvisionApi.Services
         {
             _ = Task.Run(async () =>
             {
-                // Esperar URL de imagen antes de insertar — la misma Task<string>
-                // que ya está corriendo en background desde GuardarImagenes.
-                // Múltiples awaits sobre la misma Task son seguros: el resultado
-                // queda cacheado. Si la subida falla, imagenUrl queda "".
                 string imagenUrl = "";
                 if (imagenUrlTask != null)
                 {
@@ -451,10 +459,8 @@ namespace HikvisionApi.Services
         private async Task SalidaParqueaderoLocal(
             string placa, string lane, Task<string> imagenUrlTask)
         {
-            // Sin cambios de comportamiento.
             var imagenUrl = await imagenUrlTask;
 
-            // Convenio activo local
             var convenio = await _db.ConveniosVehiculos?
                 .Include(cv => cv.ConvenioMensualidad)
                 .FirstOrDefaultAsync(cv =>
@@ -470,7 +476,6 @@ namespace HikvisionApi.Services
                 return;
             }
 
-            // Verificar pago con tiempo de gracia
             var limiteGracia = DateTime.Now.AddMinutes(-_parqueadero.TiempoGraciaMinutos);
             var registro = await _db.Registros
                 .Include(r => r.Vehiculo)
@@ -483,7 +488,7 @@ namespace HikvisionApi.Services
             if (registro != null)
             {
                 _logger.LogInformation(
-                    "\u2705 Salida autorizada (pag\u00f3 hace {Min} min): {Placa}",
+                    "✅ Salida autorizada (pagó hace {Min} min): {Placa}",
                     (int)(DateTime.Now - registro.FechaSalida!.Value).TotalMinutes, placa);
                 await RegistrarAccesoLocal(placa, lane, "SALIDA", true,
                     "PAGADO", "CASUAL", imagenUrl);
@@ -493,7 +498,7 @@ namespace HikvisionApi.Services
             {
                 await RegistrarAccesoLocal(placa, lane, "SALIDA", false,
                     "NO_PAGADO", "BLOQUEADO", imagenUrl);
-                _logger.LogWarning("\u26d4 Salida bloqueada (sin pago o gracia vencida): {Placa}", placa);
+                _logger.LogWarning("⛔ Salida bloqueada (sin pago o gracia vencida): {Placa}", placa);
             }
         }
 
@@ -501,29 +506,19 @@ namespace HikvisionApi.Services
         private async Task SalidaParqueaderoNube(
             string placa, string lane, Task<string> imagenUrlTask, string carrilNombre)
         {
-            _logger.LogInformation("\ud83d\udeaa Salida \u2014 Placa:{Placa} Lane:{Lane}", placa, lane);
+            _logger.LogInformation("🚪 Salida — Placa:{Placa} Lane:{Lane}", placa, lane);
 
-            // \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-            // NUEVA RUTA \u2014 local-first sin VPS en el camino s\u00edncrono.
-            //
-            // 1. Convenio activo \u2192 cach\u00e9 (0ms, sin SQL)
-            // 2. PagosConfirmados \u2192 BD local (~20ms SQL, sin red)
-            //    Poblado por webhook POST /api/print/confirmar-pago (Fase 3).
-            // 3. Fallback \u2192 VPS salida-rapida (~2-5s) \u2014 activo hasta Fase 3.
-            // \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-
-            // 1. Convenio activo \u2192 cach\u00e9, 0ms
+            // 1. Convenio activo → caché, 0ms
             if (_cache.TieneConvenioActivo(placa, out _))
             {
                 await EjecutarApertura(lane, "SALIDA");
                 EncolarEvento(placa, lane, carrilNombre, "SALIDA", true,
                     "CONVENIO_ACTIVO", null, true, null, imagenUrlTask);
-                _logger.LogInformation("\u2705 Salida convenio: {Placa}", placa);
+                _logger.LogInformation("✅ Salida convenio: {Placa}", placa);
                 return;
             }
 
-            // 2. Pago confirmado \u2192 BD local, single AnyAsync (~20ms)
-            //    FechaExpira = FechaPago + TiempoGracia + 5min margen
+            // 2. Pago confirmado → BD local, single AnyAsync (~20ms)
             try
             {
                 var pagadoLocal = await _db.PagosConfirmados
@@ -534,16 +529,16 @@ namespace HikvisionApi.Services
                     await EjecutarApertura(lane, "SALIDA");
                     EncolarEvento(placa, lane, carrilNombre, "SALIDA", true,
                         "PAGADO", null, false, null, imagenUrlTask);
-                    _logger.LogInformation("\u2705 Salida pagada (local): {Placa}", placa);
+                    _logger.LogInformation("✅ Salida pagada (local): {Placa}", placa);
                     return;
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "\u26a0\ufe0f PagosConfirmados no disponible \u2014 fallback VPS: {Placa}", placa);
+                _logger.LogWarning(ex, "⚠️ PagosConfirmados no disponible — fallback VPS: {Placa}", placa);
             }
 
-            // 3. Fallback \u2192 VPS (hasta que webhook confirmar-pago est\u00e9 activo)
+            // 3. Fallback → VPS (hasta que webhook confirmar-pago esté activo)
             string imagenUrl = "";
             try { imagenUrl = await imagenUrlTask; } catch { }
 
@@ -563,7 +558,7 @@ namespace HikvisionApi.Services
                 bool autorizado = root.GetProperty("ok").GetBoolean();
                 string motivo = root.TryGetProperty("motivo", out var m) ? m.GetString() ?? "" : "";
 
-                _logger.LogInformation("\ud83d\udeaa Salida VPS {Placa}: Auth={A} Motivo={M}",
+                _logger.LogInformation("🚪 Salida VPS {Placa}: Auth={A} Motivo={M}",
                     placa, autorizado, motivo);
 
                 if (autorizado)
@@ -576,12 +571,12 @@ namespace HikvisionApi.Services
                 {
                     EncolarEvento(placa, lane, carrilNombre, "SALIDA", false,
                         "NO_PAGADO", null, false, null, Task.FromResult(imagenUrl));
-                    _logger.LogWarning("\u26d4 Salida bloqueada: {Placa}", placa);
+                    _logger.LogWarning("⛔ Salida bloqueada: {Placa}", placa);
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "\u26a0\ufe0f Error salida {Placa} \u2014 fallback AbrirSiSinInternet", placa);
+                _logger.LogWarning(ex, "⚠️ Error salida {Placa} — fallback AbrirSiSinInternet", placa);
                 if (_parqueadero.AbrirSiSinInternet)
                 {
                     await EjecutarApertura(lane, "SALIDA");
@@ -604,7 +599,6 @@ namespace HikvisionApi.Services
 
             if (_modo == "Porteria")
             {
-                // Porter\u00eda usa timer de entrada para ambos sentidos
                 ms = _porteria.TimerSegundos * 1000;
             }
             else
@@ -616,18 +610,13 @@ namespace HikvisionApi.Services
 
             if (ms > 0)
             {
-                _logger.LogInformation("\u23f1 Timer {Ms}ms antes de abrir", ms);
+                _logger.LogInformation("⏱ Timer {Ms}ms antes de abrir", ms);
                 await Task.Delay(ms);
             }
 
             await AbrirBarrera(lane);
         }
 
-        // Cliente HTTP de la talanquera, reutilizado entre TODAS las
-        // aperturas. Antes AbrirBarrera creaba un HttpClientHandler nuevo
-        // en cada llamada, forzando renegociar Digest (401 → reintento)
-        // y abrir TCP nuevo en CADA carro. Con PreAuthenticate=true y
-        // cliente reutilizado, el segundo carro en adelante evita el 401.
         private static HttpClient? _barrierClient;
         private static readonly object _barrierClientLock = new();
 
@@ -674,7 +663,7 @@ namespace HikvisionApi.Services
                     _barrier.BaseUrl + doorId,
                     new StringContent(xml, Encoding.UTF8, "application/xml"));
 
-                _logger.LogInformation("\ud83d\udeaa Barrera {Door} \u2192 {Status}", doorId, r.StatusCode);
+                _logger.LogInformation("🚪 Barrera {Door} → {Status}", doorId, r.StatusCode);
             }
             catch (Exception ex)
             {
@@ -682,19 +671,9 @@ namespace HikvisionApi.Services
             }
         }
 
-        // M\u00e9todo p\u00fablico para llamadas desde PrintController (ingreso manual)
         public async Task RegistrarQrPublico(int registroId, string qrToken)
             => await RegistrarQrEnControladora(registroId, qrToken);
 
-        // =============================================
-        // QR \u2014 REGISTRAR EN CONTROLADORA AL INGRESO
-        // Usa PUT /ISAPI/AccessControl/CardInfo/record
-        // =============================================
-
-        // =============================================
-        // QR \u2014 SINCRONIZAR DESDE VPS (ingreso manual)
-        // Si ParkSky no devolvi\u00f3 QrToken, consultarlo
-        // =============================================
         private async Task SincronizarQrDesdeVps(string placa)
         {
             if (!_barrier.UsarQR) return;
@@ -714,17 +693,10 @@ namespace HikvisionApi.Services
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "\u26a0\ufe0f No se pudo sincronizar QR para {Placa}", placa);
+                _logger.LogWarning(ex, "⚠️ No se pudo sincronizar QR para {Placa}", placa);
             }
         }
-        // =============================================
-        // QR \u2014 CREAR CLIENTE HTTP CON DIGEST AUTH
-        // Mismo patr\u00f3n que AbrirBarrera: GET /System/status
-        // para forzar el challenge antes de POST/DELETE
-        // =============================================
-        // Extrae la ra\u00edz http://host de cualquier BaseUrl
-        // Ej: "http://192.168.1.130/ISAPI/AccessControl/RemoteControl/door/"
-        //   \u2192 "http://192.168.1.130"
+
         private string ObtenerRaizControladora()
         {
             var uri = new Uri(_barrier.BaseUrl);
@@ -745,7 +717,6 @@ namespace HikvisionApi.Services
                 Timeout = TimeSpan.FromSeconds(10)
             };
 
-            // Forzar challenge Digest igual que hace AbrirBarrera
             try
             {
                 await client.GetAsync($"{ObtenerRaizControladora()}/System/status");
@@ -755,11 +726,6 @@ namespace HikvisionApi.Services
             return client;
         }
 
-        // =============================================
-        // QR \u2014 REGISTRAR EN CONTROLADORA
-        // Paso 1: crear usuario  POST /ISAPI/AccessControl/UserInfo/Record
-        // Paso 2: asociar tarjeta POST /ISAPI/AccessControl/CardInfo/Record
-        // =============================================
         private async Task RegistrarQrEnControladora(int registroId, string qrToken)
         {
             if (!_barrier.UsarQR || string.IsNullOrEmpty(qrToken)) return;
@@ -771,8 +737,6 @@ namespace HikvisionApi.Services
                 using var client = await CrearClienteHikvision();
                 var empNo = $"REG{registroId}";
 
-                // \u2500\u2500 PASO 1: crear usuario con permiso en TODAS las puertas de salida \u2500\u2500
-                // La controladora abre SOLO la puerta donde se presenta el QR f\u00edsicamente
                 var rightPlan = _barrier.PuertaLectorQR
                     .Select(p => new { doorNo = p, planTemplateNo = "1" })
                     .ToArray();
@@ -800,19 +764,18 @@ namespace HikvisionApi.Services
                     new StringContent(userJson, Encoding.UTF8, "application/json"));
 
                 var body1 = await r1.Content.ReadAsStringAsync();
-                _logger.LogInformation("\ud83d\udcf1 QR usuario creado: REG{Id} puertas=[{Puertas}] \u2192 {Status}",
+                _logger.LogInformation("📱 QR usuario creado: REG{Id} puertas=[{Puertas}] → {Status}",
                     registroId,
                     string.Join(",", _barrier.PuertaLectorQR),
                     r1.StatusCode);
 
                 if (!r1.IsSuccessStatusCode)
                 {
-                    _logger.LogWarning("\u26a0\ufe0f Error creando usuario QR REG{Id}: {Body}",
+                    _logger.LogWarning("⚠️ Error creando usuario QR REG{Id}: {Body}",
                         registroId, body1);
                     return;
                 }
 
-                // \u2500\u2500 PASO 2: asociar tarjeta QR \u2500\u2500
                 var cardJson = System.Text.Json.JsonSerializer.Serialize(new
                 {
                     CardInfo = new
@@ -828,25 +791,20 @@ namespace HikvisionApi.Services
                     new StringContent(cardJson, Encoding.UTF8, "application/json"));
 
                 var body2 = await r2.Content.ReadAsStringAsync();
-                _logger.LogInformation("\ud83d\udcf1 QR tarjeta asociada: REG{Id} \u2192 {Status}",
+                _logger.LogInformation("📱 QR tarjeta asociada: REG{Id} → {Status}",
                     registroId, r2.StatusCode);
 
                 if (!r2.IsSuccessStatusCode)
-                    _logger.LogWarning("\u26a0\ufe0f Error asociando tarjeta QR REG{Id}: {Body}",
+                    _logger.LogWarning("⚠️ Error asociando tarjeta QR REG{Id}: {Body}",
                         registroId, body2);
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex,
-                    "\u26a0\ufe0f No se pudo registrar QR en controladora para REG{Id}", registroId);
+                    "⚠️ No se pudo registrar QR en controladora para REG{Id}", registroId);
             }
         }
 
-        // =============================================
-        // QR \u2014 ELIMINAR DE CONTROLADORA AL SALIR
-        // Paso 1: eliminar tarjeta DELETE /ISAPI/AccessControl/CardInfo/Record
-        // Paso 2: eliminar usuario  DELETE /ISAPI/AccessControl/UserInfo/Record
-        // =============================================
         private async Task EliminarQrDeControladora(int registroId)
         {
             if (!_barrier.UsarQR) return;
@@ -859,7 +817,6 @@ namespace HikvisionApi.Services
 
                 var empNo = $"REG{registroId}";
 
-                // \u2500\u2500 PASO 1: eliminar tarjeta \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
                 var cardDelJson = System.Text.Json.JsonSerializer.Serialize(new
                 {
                     CardInfoDelCond = new
@@ -879,10 +836,9 @@ namespace HikvisionApi.Services
                 var r1 = await client.SendAsync(req1);
                 var body1 = await r1.Content.ReadAsStringAsync();
 
-                _logger.LogInformation("\ud83d\uddd1\ufe0f QR tarjeta eliminada: REG{Id} \u2192 {Status} {Body}",
+                _logger.LogInformation("🗑️ QR tarjeta eliminada: REG{Id} → {Status} {Body}",
                     registroId, r1.StatusCode, body1);
 
-                // \u2500\u2500 PASO 2: eliminar usuario \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
                 var userDelJson = System.Text.Json.JsonSerializer.Serialize(new
                 {
                     UserInfoDetail = new
@@ -903,13 +859,13 @@ namespace HikvisionApi.Services
                 var r2 = await client.SendAsync(req2);
                 var body2 = await r2.Content.ReadAsStringAsync();
 
-                _logger.LogInformation("\ud83d\uddd1\ufe0f QR usuario eliminado: REG{Id} \u2192 {Status} {Body}",
+                _logger.LogInformation("🗑️ QR usuario eliminado: REG{Id} → {Status} {Body}",
                     registroId, r2.StatusCode, body2);
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex,
-                    "\u26a0\ufe0f No se pudo eliminar QR de controladora para REG{Id}", registroId);
+                    "⚠️ No se pudo eliminar QR de controladora para REG{Id}", registroId);
             }
         }
 
@@ -917,12 +873,6 @@ namespace HikvisionApi.Services
         // =============================================
         // HELPERS
         // =============================================
-        // Guarda imagen en disco LOCAL de forma s\u00edncrona (r\u00e1pido, I/O local)
-        // y ARRANCA la subida al VPS sin esperarla \u2014 devuelve la Task ya en
-        // marcha para que quien la necesite la awaitee cuando le toque.
-        // Antes, esta misma llamada esperaba la subida completa (red) antes
-        // de devolver el control a ProcesarAcceso, bloqueando entrada/salida
-        // de TODOS los modos detr\u00e1s de cada subida de imagen.
         private async Task<Task<string>> GuardarImagenes(
             string placa, string lane, string absTime,
             IFormFile? plateImage, IFormFile? fullImage)
@@ -930,7 +880,6 @@ namespace HikvisionApi.Services
             string fecha = absTime.Substring(0, 8);
             string nombre = $"{absTime}_{placa}_{lane}.jpg";
 
-            // Leer ambas im\u00e1genes en memoria PRIMERO (los streams solo se leen una vez)
             byte[]? plateBytes = null;
             byte[]? fullBytes = null;
 
@@ -947,10 +896,9 @@ namespace HikvisionApi.Services
                 fullBytes = ms.ToArray();
             }
 
-            _logger.LogInformation("\ud83d\udcf7 Bytes \u2014 plate:{P} full:{F}",
+            _logger.LogInformation("📷 Bytes — plate:{P} full:{F}",
                 plateBytes?.Length ?? 0, fullBytes?.Length ?? 0);
 
-            // Guardar localmente como respaldo \u2014 I/O local, r\u00e1pido, se mantiene s\u00edncrono
             try
             {
                 string carpeta = Path.Combine(_anpr.TargetFolder, $"Camara{lane}", fecha);
@@ -968,24 +916,16 @@ namespace HikvisionApi.Services
                 _logger.LogWarning(ex, "No se pudo guardar imagen local para {Placa}", placa);
             }
 
-            // Subir al VPS \u2014 usar foto completa, si no hay usar recorte placa.
-            // NO se espera (await) esta llamada aqu\u00ed \u2014 se arranca y se
-            // devuelve la Task en marcha. Antes este punto bloqueaba
-            // ProcesarAcceso completo (~15-19s con varios carros seguidos)
-            // antes incluso de abrir la talanquera.
             var imgBytes = fullBytes ?? plateBytes;
             var tipo = fullBytes != null ? "Completa" : "Placa";
 
             if (_parkSky != null && imgBytes != null && imgBytes.Length > 0)
                 return SubirImagenVpsAsync(placa, lane, tipo, imgBytes);
 
-            _logger.LogWarning("\u26a0\ufe0f Sin bytes de imagen para {Placa} \u2014 no se sube al VPS", placa);
+            _logger.LogWarning("⚠️ Sin bytes de imagen para {Placa} — no se sube al VPS", placa);
             return Task.FromResult("");
         }
 
-        // Sube la imagen al VPS de forma independiente. Mismo manejo de
-        // errores que antes (silencioso, solo log): perder la foto nunca
-        // debe bloquear el registro del acceso ni la apertura de la talanquera.
         private async Task<string> SubirImagenVpsAsync(
             string placa, string lane, string tipo, byte[] imgBytes)
         {
@@ -995,10 +935,10 @@ namespace HikvisionApi.Services
                 var urlVps = await _parkSky.EnviarImagenAsync(placa, lane, tipo, base64);
                 if (!string.IsNullOrEmpty(urlVps))
                 {
-                    _logger.LogInformation("\ud83d\uddbc\ufe0f Imagen VPS OK: {Url}", urlVps);
+                    _logger.LogInformation("🖼️ Imagen VPS OK: {Url}", urlVps);
                     return urlVps;
                 }
-                _logger.LogWarning("\u26a0\ufe0f VPS no devolvi\u00f3 URL para {Placa}", placa);
+                _logger.LogWarning("⚠️ VPS no devolvió URL para {Placa}", placa);
             }
             catch (Exception ex)
             {
@@ -1027,8 +967,7 @@ namespace HikvisionApi.Services
             }
             catch (Exception ex)
             {
-                // BD local no disponible \u2014 solo loguear, no interrumpir el flujo
-                _logger.LogWarning("\u26a0\ufe0f BD local no disponible (AccesoVehicular no guardado): {Msg}", ex.Message);
+                _logger.LogWarning("⚠️ BD local no disponible (AccesoVehicular no guardado): {Msg}", ex.Message);
             }
         }
 
@@ -1037,7 +976,6 @@ namespace HikvisionApi.Services
         {
             try
             {
-                // 1. Buscar o crear veh\u00edculo
                 var vehiculo = await _db.Vehiculos
                     .FirstOrDefaultAsync(v => v.Placa == placa);
 
@@ -1055,7 +993,6 @@ namespace HikvisionApi.Services
                     await _db.SaveChangesAsync();
                 }
 
-                // 2. Buscar tarifa por tipo de veh\u00edculo
                 var tipo = DetectarTipoVehiculo(placa);
                 var tarifa = await _db.Tarifas
                     .FirstOrDefaultAsync(t =>
@@ -1063,16 +1000,14 @@ namespace HikvisionApi.Services
                         t.TipoVehiculo != null &&
                         t.TipoVehiculo.Contains(tipo));
 
-                // Si no encuentra tarifa espec\u00edfica, usar la primera activa
                 tarifa ??= await _db.Tarifas.FirstOrDefaultAsync(t => t.Activa);
 
                 if (tarifa == null)
                 {
-                    _logger.LogWarning("\u26a0\ufe0f Sin tarifa disponible para {Placa} \u2014 no se crea registro local", placa);
+                    _logger.LogWarning("⚠️ Sin tarifa disponible para {Placa} — no se crea registro local", placa);
                     return;
                 }
 
-                // 3. Crear el registro de ingreso
                 var registro = new RegistroLocal
                 {
                     VehiculoId = vehiculo.Id,
@@ -1086,54 +1021,31 @@ namespace HikvisionApi.Services
                 _db.Registros.Add(registro);
                 await _db.SaveChangesAsync();
 
-                _logger.LogInformation("\u2705 Registro local creado: {Placa} Id={Id}", placa, registro.Id);
+                _logger.LogInformation("✅ Registro local creado: {Placa} Id={Id}", placa, registro.Id);
             }
             catch (Exception ex)
             {
-                _logger.LogWarning("\u26a0\ufe0f BD local no disponible (RegistroLocal no guardado): {Msg}", ex.Message);
+                _logger.LogWarning("⚠️ BD local no disponible (RegistroLocal no guardado): {Msg}", ex.Message);
             }
         }
 
 
         // =============================================
-        // IMPRIMIR DESDE PARKSKY O FALLBACK LOCAL
+        // IMPRIMIR — 100% local, sin llamar al VPS.
+        // CAMBIO: antes intentaba pedir el tiquete a ParkSky primero y
+        // solo caía a local si fallaba. Ahora imprime directo con datos
+        // locales siempre, para que el proceso sea rápido y no dependa de
+        // la conexión al VPS. registroId queda sin usar — se mantiene en
+        // la firma para no romper llamadas existentes desde algún punto
+        // que no tengamos visibilidad.
         // =============================================
         private async Task ImprimirDesdeParkskyOLocal(
             string impresora, string placa, string tipo,
             string carrilNombre, int? registroId)
         {
-            if (registroId.HasValue && registroId.Value > 0)
-            {
-                try
-                {
-                    var ticket =
-                        await _parkSky.ObtenerTicketAsync(
-                            registroId.Value);
-
-                    if (ticket != null && ticket.Ok)
-                    {
-                        _logger.LogInformation(
-                            "\ud83d\udda8\ufe0f Imprimiendo ticket directo RegistroId={Id}",
-                            registroId.Value);
-
-                        _print.ImprimirDesdeTicket(
-                            impresora,
-                            ticket);
-
-                        return;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(
-                        ex,
-                        "Error obteniendo ticket desde ParkSky");
-                }
-            }
-
-            // Fallback \u2014 imprimir con datos locales si ParkSky no disponible
+            var configTiquete = await ObtenerConfiguracionLocal();
             _print.ImprimirTiqueteLocal(
-                impresora, placa, tipo, DateTime.Now, carrilNombre, false);
+                impresora, placa, tipo, DateTime.Now, carrilNombre, false, configTiquete);
         }
 
         private async Task CerrarRegistroLocal(string placa)
@@ -1143,7 +1055,6 @@ namespace HikvisionApi.Services
 
         private string DetectarTipoVehiculo(string placa)
         {
-            // 1. Consultar patrones personalizados en BD (m\u00e1xima prioridad)
             try
             {
                 var patrones = _db?.PatronPlacas?
@@ -1162,12 +1073,9 @@ namespace HikvisionApi.Services
             }
             catch { /* BD no disponible */ }
 
-            // 2. Reglas colombianas est\u00e1ndar
             return DetectarTipoPlacaColombia(placa);
         }
 
-        /// Detecta tipo de veh\u00edculo por formato de placa colombiana.
-        /// Retorna "Carro", "Moto" o null si el formato no es reconocido.
         private static string? DetectarTipoPlacaColombia(string placa)
         {
             if (string.IsNullOrWhiteSpace(placa)) return null;
@@ -1176,23 +1084,18 @@ namespace HikvisionApi.Services
             bool L(int i) => i < n && char.IsLetter(placa[i]);
             bool D(int i) => i < n && char.IsDigit(placa[i]);
 
-            // AAA### (6) \u2192 Carro
             if (n == 6 && L(0) && L(1) && L(2) && D(3) && D(4) && D(5))
                 return "Carro";
 
-            // AAA##A (6) \u2192 Moto nueva
             if (n == 6 && L(0) && L(1) && L(2) && D(3) && D(4) && L(5))
                 return "Moto";
 
-            // AAA## (5) \u2192 Moto antigua (sin letra final)
             if (n == 5 && L(0) && L(1) && L(2) && D(3) && D(4))
                 return "Moto";
 
-            return null; // formato no reconocido \u2192 descartar en c\u00e1maras
+            return null;
         }
 
-
-        /// Misma l\u00f3gica que ControlController.CoincidePatron
         private static bool CoincidePatronLocal(string placa, string patron)
         {
             if (placa.Length != patron.Length) return false;
