@@ -59,32 +59,24 @@ namespace HikvisionApi.Services
 
         // =============================================
         // Fallback local (sin datos de ParkSky)
-        // CAMBIO: acepta ConfiguracionLocal? — datos reales del parqueadero
-        // (nombre, NIT, dirección, teléfono, mensajes) leídos de la tabla
-        // Configuraciones local, en vez de los valores fijos que había
-        // antes ("PARQUEADERO", campos vacíos). Si config es null o algún
-        // campo viene vacío, cae a los mismos valores por defecto de
-        // siempre — nunca deja el tiquete con un hueco en blanco raro.
-        // qrToken sigue igual: generado localmente en EntradaParqueaderoNube
-        // con el mismo algoritmo del VPS.
+        // CAMBIO: acepta ConfiguracionLocal para usar datos reales de la BD
+        // en lugar de los valores hardcodeados ("PARQUEADERO", "", etc.)
         // =============================================
         public void ImprimirTiqueteLocal(
             string impresora, string placa, string tipoVehiculo,
             DateTime fechaEntrada, string carril, bool esMensualidad,
-            ConfiguracionLocal? config = null,
+            HikvisionApi.Models.ConfiguracionLocal? config = null,
             string? nombreConvenio = null,
             string? qrToken = null)
         {
             ImprimirTiquete(
                 impresora: impresora,
-                nombreParqueadero: !string.IsNullOrWhiteSpace(config?.NombreParqueadero)
-                    ? config.NombreParqueadero : "PARQUEADERO",
+                nombreParqueadero: config?.NombreParqueadero ?? "PARQUEADERO",
                 nit: config?.Nit ?? "",
                 direccion: config?.Direccion ?? "",
                 telefono: config?.Telefono ?? "",
                 mensajeEncabezado: config?.MensajeEncabezado ?? "",
-                mensajePie: !string.IsNullOrWhiteSpace(config?.MensajePie)
-                    ? config.MensajePie : "Conserve este tiquete para su salida",
+                mensajePie: config?.MensajePie ?? "Conserve este tiquete para su salida",
                 mensajeObservacion: config?.MensajeObservacion ?? "",
                 placa: placa,
                 tipoVehiculo: tipoVehiculo,
@@ -166,30 +158,29 @@ namespace HikvisionApi.Services
                     var fFooter = new Font("Arial", 11f, FontStyle.Bold);
                     var fTag = new Font("Arial", 6.5f, FontStyle.Bold);
 
-                    if (!string.IsNullOrEmpty(mensajeEncabezado))
+                    // Helper: dibuja texto midiendo la altura real para evitar cortes
+                    float DrawAuto(string texto, Font font, Brush brush, StringFormat fmt, float extraPad = 2f)
                     {
-                        g.DrawString(mensajeEncabezado, fInfo, gris,
-                            new RectangleF(x, y, w, 14), sfC); y += 14;
+                        if (string.IsNullOrEmpty(texto)) return 0f;
+                        var sz = g.MeasureString(texto, font, (int)w, fmt);
+                        float h = sz.Height + extraPad;
+                        g.DrawString(texto, font, brush, new RectangleF(x, y, w, h), fmt);
+                        return h;
                     }
 
-                    g.DrawString(nombreParqueadero.ToUpper(), fNomPark, negro,
-                        new RectangleF(x, y, w, 22), sfC); y += 22;
+                    // Encabezado y datos empresa — DrawAuto mide la altura real,
+                    // evitando que textos largos queden cortados en el tiquete
+                    if (!string.IsNullOrEmpty(mensajeEncabezado))
+                        y += DrawAuto(mensajeEncabezado, fInfo, gris, sfC);
+
+                    y += DrawAuto(nombreParqueadero.ToUpper(), fNomPark, negro, sfC);
 
                     if (!string.IsNullOrEmpty(nit))
-                    {
-                        g.DrawString($"NIT: {nit}", fInfo, negro,
-                            new RectangleF(x, y, w, 13), sfC); y += 13;
-                    }
+                        y += DrawAuto($"NIT: {nit}", fInfo, negro, sfC);
                     if (!string.IsNullOrEmpty(direccion))
-                    {
-                        g.DrawString(direccion, fInfo, negro,
-                            new RectangleF(x, y, w, 13), sfC); y += 13;
-                    }
+                        y += DrawAuto(direccion, fInfo, negro, sfC);
                     if (!string.IsNullOrEmpty(telefono))
-                    {
-                        g.DrawString($"TEL: {telefono}", fInfo, negro,
-                            new RectangleF(x, y, w, 13), sfC); y += 13;
-                    }
+                        y += DrawAuto($"TEL: {telefono}", fInfo, negro, sfC);
 
                     y += 6;
                     var badgeW = 140f; var badgeH = 18f;
@@ -273,17 +264,25 @@ namespace HikvisionApi.Services
 
                     if (!string.IsNullOrEmpty(mensajeObservacion))
                     {
+                        // Altura generosa: MeasureString puede subestimar en textos largos
+                        var szObs = g.MeasureString(mensajeObservacion, fInfo, (int)w, sfC);
+                        float hObs = Math.Max(szObs.Height + 6f, 30f);
                         g.DrawString(mensajeObservacion, fInfo, gris,
-                            new RectangleF(x, y, w, 28), sfC); y += 30;
+                            new RectangleF(x, y, w, hObs * 2f), sfC);
+                        y += hObs + 4f;
                     }
 
-                    g.DrawString("¡BIENVENIDO!", fFooter, negro,
-                        new RectangleF(x, y, w, 20), sfC); y += 22;
+                    y += DrawAuto("GRACIAS POR SU VISITA", fFooter, negro, sfC);
 
                     if (!string.IsNullOrEmpty(mensajePie))
                     {
+                        // Dibujar con rectángulo de 300px de alto (jamás corta)
+                        // y avanzar y solo lo que realmente mide el texto
+                        var szPie = g.MeasureString(mensajePie, fInfo, (int)w, sfC);
+                        float hPie = Math.Max(szPie.Height + 6f, 28f);
                         g.DrawString(mensajePie, fInfo, gris,
-                            new RectangleF(x, y, w, 14), sfC); y += 16;
+                            new RectangleF(x, y, w, 300f), sfC);
+                        y += hPie;
                     }
 
                     g.DrawString("POWERED BY SYSPARKING® CLOUD", fTag, grisC,

@@ -27,6 +27,7 @@ namespace HikvisionApi.Services
             ImmutableHashSet<string>.Empty;
         private volatile ImmutableDictionary<string, ConvenioCacheDto> _convenios =
             ImmutableDictionary<string, ConvenioCacheDto>.Empty;
+        private volatile HikvisionApi.Models.ConfiguracionLocal? _configuracion;
 
         public LocalCacheService(
             IServiceScopeFactory scopeFactory,
@@ -66,6 +67,15 @@ namespace HikvisionApi.Services
         public bool EsRestringido(string placa)
             => _restringidos.Contains(placa.ToUpper().Trim());
 
+        // Devuelve la configuración del parqueadero cacheada desde la tabla Configuraciones.
+        // Nunca retorna null — si la BD no responde usa un objeto vacío como fallback.
+        public HikvisionApi.Models.ConfiguracionLocal GetConfiguracion()
+            => _configuracion ?? new HikvisionApi.Models.ConfiguracionLocal
+            {
+                NombreParqueadero = "PARQUEADERO",
+                MensajePie = "Conserve este tiquete para su salida"
+            };
+
         // Devuelve true si la placa tiene convenio vigente hoy.
         // Si true, rellena convenioId con el id del convenio.
         public bool TieneConvenioActivo(string placa, out int? convenioId)
@@ -88,6 +98,7 @@ namespace HikvisionApi.Services
         {
             await RefreshRestringidosAsync();
             await RefreshConveniosAsync();
+            await RefreshConfiguracionAsync();
             _logger.LogDebug("LocalCacheService: caché refrescado — {R} restringidos, {C} convenios",
                 _restringidos.Count, _convenios.Count);
         }
@@ -145,6 +156,23 @@ namespace HikvisionApi.Services
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "LocalCacheService: no se pudo refrescar convenios — manteniendo caché anterior");
+            }
+        }
+
+        private async Task RefreshConfiguracionAsync()
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                _configuracion = await db.Configuraciones.FirstOrDefaultAsync();
+                if (_configuracion != null)
+                    _logger.LogDebug("LocalCacheService: configuración cargada — {Nombre}",
+                        _configuracion.NombreParqueadero);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "LocalCacheService: no se pudo refrescar configuración");
             }
         }
     }

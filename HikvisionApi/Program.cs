@@ -66,6 +66,11 @@ builder.Services.AddHttpClient<ParkSkyClient>();
 builder.Services.AddScoped<HikvisionService>();
 builder.Services.AddSingleton<PrintService>();
 
+// IAnprEventBus: no-op por defecto (todos los clientes).
+// Clientes con dashboard reemplazan este registro con AnprEventBusSignalR.
+// Ver Program_dashboard_additions.cs para la configuración del dashboard.
+builder.Services.AddSingleton<IAnprEventBus, AnprEventBusNoop>();
+
 // ── NUEVO: LocalCacheService ─────────────────────────────────
 // Singleton con caché en memoria de restringidos + convenios.
 // El segundo registro (AddHostedService) hace que ASP.NET Core
@@ -84,6 +89,9 @@ builder.Services.AddHostedService<SyncBackgroundService>();
 builder.Services.AddControllers();
 builder.WebHost.ConfigureKestrel(opts =>
     opts.Limits.MaxRequestBodySize = 50 * 1024 * 1024);
+// Puerto configurado en appsettings.json bajo la clave "Urls".
+// Ejemplo: "Urls": "http://0.0.0.0:86"
+// En IIS este valor es ignorado — IIS maneja el binding directamente.
 
 var app = builder.Build();
 
