@@ -338,16 +338,10 @@ namespace HikvisionApi.Services
             _logger.LogInformation("\ud83d\ude97 Entrada \u2014 Placa:{Placa} Tipo:{Tipo} Lane:{Lane}",
                 placa, tipoVehiculo, lane);
 
-            // Generar QrToken local — mismo algoritmo que VPS ControlController.GenerarQrToken.
-            // Garantiza que el QR del tiquete coincida con el token que al cobrar
-            // se carga en la K2600 vía /api/print/registrar-qr.
-            // Se incluye en EventoLocal para que SyncBackgroundService lo envíe al VPS
-            // y el RegistroParqueo quede con el mismo token.
-            const string qrChars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-            var qrBytes = new byte[4];
-            System.Security.Cryptography.RandomNumberGenerator.Fill(qrBytes);
-            var qrTokenLocal = $"{placa}-{horaEntrada:yyyyMMdd}-{horaEntrada:HHmmss}-" +
-                new string(qrBytes.Select(b => qrChars[b % qrChars.Length]).ToArray());
+            // QrToken = solo la placa. Corto, legible, no se corta en lectores.
+            // Solo puede haber un registro activo por placa a la vez → identificador
+            // único suficiente para CobrarQr en el VPS y para la K2600 en la salida.
+            var qrTokenLocal = placa.ToUpper().Trim();
 
             // ════════════════════════════════════════════════════════════════
             // NUEVA RUTA CRÍTICA — caché en memoria + HTTP LAN a controladora

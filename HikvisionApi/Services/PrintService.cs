@@ -264,15 +264,14 @@ namespace HikvisionApi.Services
 
                     if (!string.IsNullOrEmpty(mensajeObservacion))
                     {
-                        // Altura generosa: MeasureString puede subestimar en textos largos
                         var szObs = g.MeasureString(mensajeObservacion, fInfo, (int)w, sfC);
-                        float hObs = Math.Max(szObs.Height + 6f, 30f);
+                        float hObs = Math.Max(szObs.Height + 6f, 28f);
                         g.DrawString(mensajeObservacion, fInfo, gris,
-                            new RectangleF(x, y, w, hObs * 2f), sfC);
-                        y += hObs + 4f;
+                            new RectangleF(x, y, w, 400f), sfC);
+                        y += hObs;
                     }
 
-                    y += DrawAuto("GRACIAS POR SU VISITA", fFooter, negro, sfC);
+                    y += DrawAuto("¡GRACIAS POR SU VISITA!", fFooter, negro, sfC);
 
                     if (!string.IsNullOrEmpty(mensajePie))
                     {
