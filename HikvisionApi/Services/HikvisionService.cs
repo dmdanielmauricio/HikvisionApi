@@ -361,6 +361,37 @@ namespace HikvisionApi.Services
             // El tiquete se imprime cuando el VPS confirma el RegistroId.
             // ════════════════════════════════════════════════════════════════
 
+            // 0. ANTI-DUPLICADO ANPR — ventana 5 min en memoria, 0ms
+            //    Previene doble registro por doble trigger de cámara
+            if (EsIngresoReciente(placa))
+            {
+                _logger.LogWarning("⛔ Anti-dup: {Placa} ya procesada recientemente, ignorando", placa);
+                return;
+            }
+
+            // 0c. ANTI-REINGRESO — cámara de entrada captura vehículo que aún está saliendo
+            //     Si salió hace menos de MinutosAntiReingreso minutos, ignorar la captura.
+            if (EsSalidaReciente(placa))
+            {
+                _logger.LogInformation(
+                    "⏩ Anti-reingreso: {Placa} salió hace menos de {M} min — captura ignorada",
+                    placa, _parqueadero.MinutosAntiReingreso);
+                return;
+            }
+
+            // 0b. PAGO DÍA — ¿reingresa dentro del lapso prepagado?
+            //     Se consulta el caché local (0ms, O(1)) — mismo patrón que convenios.
+            //     Si el caché confirma PagoDía vigente, la barrera abre sin crear registro.
+            if (_cache.TienePagoDiaVigente(placa))
+            {
+                _logger.LogInformation("🅿 PagoDía reingreso (nube): {Placa} — abriendo barrera", placa);
+                await EjecutarApertura(lane, "ENTRADA");
+                // No imprimir tiquete — encolar para que VPS reactivación el registro
+                EncolarEvento(placa, lane, carrilNombre, "ENTRADA", true,
+                    "PAGO_DIA", tipoVehiculo, false, null, imagenUrlTask, qrTokenLocal);
+                return;
+            }
+
             // 1. Restringido → caché, 0ms
             if (_cache.EsRestringido(placa))
             {
@@ -391,10 +422,10 @@ namespace HikvisionApi.Services
             _logger.LogInformation("\u2705 Barrera abierta: {Placa} ({Motivo})", placa, motivo);
 
             // 4. Imprimir tiquete INMEDIATAMENTE con datos locales.
-            //    El QR del tiquete de entrada es solo informativo — el QR que
-            //    activa la talanquera de salida se carga en K2600 al momento del
-            //    cobro (registrar-qr), no aquí. No hay razón para esperar al VPS.
-            if (_parqueadero.EntregarTiquete && !string.IsNullOrEmpty(impresora))
+            //    Si llegamos aquí: no es PagoDía (0b retornó antes) ni anti-dup.
+            //    Solo se omite si es mensualidad y ImprimirTiqueteMensualidad = false.
+            if (_parqueadero.EntregarTiquete && !string.IsNullOrEmpty(impresora)
+                && (!tieneConvenio || _parqueadero.ImprimirTiqueteMensualidad))
                 _print.ImprimirTiqueteLocal(impresora, placa, tipoVehiculo,
                     horaEntrada, carrilNombre, tieneConvenio,
                     _cache.GetConfiguracion(),
@@ -544,6 +575,7 @@ namespace HikvisionApi.Services
                 await EjecutarApertura(lane, "SALIDA");
                 EncolarEvento(placa, lane, carrilNombre, "SALIDA", true,
                     "CONVENIO_ACTIVO", null, true, null, imagenUrlTask);
+                MarcarSalidaReciente(placa);
                 _logger.LogInformation("\u2705 Salida convenio: {Placa}", placa);
                 return;
             }
@@ -560,6 +592,7 @@ namespace HikvisionApi.Services
                     await EjecutarApertura(lane, "SALIDA");
                     EncolarEvento(placa, lane, carrilNombre, "SALIDA", true,
                         "PAGADO", null, false, null, imagenUrlTask);
+                    MarcarSalidaReciente(placa);
                     _logger.LogInformation("\u2705 Salida pagada (local): {Placa}", placa);
                     return;
                 }
@@ -594,6 +627,7 @@ namespace HikvisionApi.Services
 
                 if (autorizado)
                 {
+                    MarcarSalidaReciente(placa);
                     await EjecutarApertura(lane, "SALIDA");
                     EncolarEvento(placa, lane, carrilNombre, "SALIDA", true,
                         motivo, null, false, null, Task.FromResult(imagenUrl));
@@ -656,6 +690,60 @@ namespace HikvisionApi.Services
         // cliente reutilizado, el segundo carro en adelante evita el 401.
         private static HttpClient? _barrierClient;
         private static readonly object _barrierClientLock = new();
+
+        // ── ANTI-DUPLICADO CÁMARA ─────────────────────────────────────────
+        // Ventana de 5 minutos: si la misma placa ya fue procesada, ignorar.
+        // Previene el doble trigger de ANPR (2 eventos en ~100ms mismo paso).
+        private static readonly Dictionary<string, DateTime> _ultimoIngreso = new();
+        private static readonly object _antiDupLock = new();
+        private static readonly TimeSpan _ventanaAntiDup = TimeSpan.FromMinutes(5);
+
+        private bool EsIngresoReciente(string placa)
+        {
+            lock (_antiDupLock)
+            {
+                if (_ultimoIngreso.TryGetValue(placa, out var ultimo) &&
+                    DateTime.Now - ultimo < _ventanaAntiDup)
+                    return true;
+                _ultimoIngreso[placa] = DateTime.Now;
+                var viejas = _ultimoIngreso
+                    .Where(k => DateTime.Now - k.Value > _ventanaAntiDup)
+                    .Select(k => k.Key).ToList();
+                foreach (var k in viejas) _ultimoIngreso.Remove(k);
+                return false;
+            }
+        }
+
+        // ── ANTI-REINGRESO ─────────────────────────────────────────────────
+        // Cuando un vehículo sale, se marca en memoria por MinutosAntiReingreso.
+        // Si una cámara de ENTRADA lo captura dentro de ese lapso (vehículo aún
+        // saliendo o girando), se ignora el evento — no crea registro duplicado.
+        private static readonly Dictionary<string, DateTime> _salidaReciente = new();
+        private static readonly object _salidaLock = new();
+
+        private void MarcarSalidaReciente(string placa)
+        {
+            var ventana = TimeSpan.FromMinutes(_parqueadero.MinutosAntiReingreso);
+            lock (_salidaLock)
+            {
+                _salidaReciente[placa.ToUpper().Trim()] = DateTime.Now;
+                var viejas = _salidaReciente
+                    .Where(k => DateTime.Now - k.Value > ventana)
+                    .Select(k => k.Key).ToList();
+                foreach (var k in viejas) _salidaReciente.Remove(k);
+            }
+        }
+
+        private bool EsSalidaReciente(string placa)
+        {
+            if (_parqueadero.MinutosAntiReingreso <= 0) return false;
+            var ventana = TimeSpan.FromMinutes(_parqueadero.MinutosAntiReingreso);
+            lock (_salidaLock)
+            {
+                return _salidaReciente.TryGetValue(placa.ToUpper().Trim(), out var ts)
+                    && DateTime.Now - ts < ventana;
+            }
+        }
 
         private HttpClient ObtenerClienteBarrera()
         {
@@ -1165,6 +1253,7 @@ namespace HikvisionApi.Services
 
         private async Task CerrarRegistroLocal(string placa)
         {
+            MarcarSalidaReciente(placa);
             _logger.LogInformation("Salida local registrada: {Placa}", placa);
         }
 

@@ -20,6 +20,16 @@
     "ReturnTypes": []
   },
   {
+    "ContainingType": "HikvisionApi.Controllers.AbrirCajaController",
+    "Method": "AbrirCaja",
+    "RelativePath": "api/print/abrir-caja",
+    "HttpMethod": "POST",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": []
+  },
+  {
     "ContainingType": "HikvisionApi.Controllers.ConfirmarPagoController",
     "Method": "ConfirmarPago",
     "RelativePath": "api/print/confirmar-pago",

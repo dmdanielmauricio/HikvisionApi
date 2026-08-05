@@ -65,6 +65,7 @@ builder.Services.Configure<ImpresorasSettings>(
 builder.Services.AddHttpClient<ParkSkyClient>();
 builder.Services.AddScoped<HikvisionService>();
 builder.Services.AddSingleton<PrintService>();
+builder.Services.AddSingleton<CajaRegistradoraService>();
 
 // IAnprEventBus: no-op por defecto (todos los clientes).
 // Clientes con dashboard reemplazan este registro con AnprEventBusSignalR.

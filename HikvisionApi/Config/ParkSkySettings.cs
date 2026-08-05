@@ -8,7 +8,6 @@
         /// Minutos de gracia entre pago y salida física
         public int TiempoGraciaMinutos { get; set; } = 15;
     }
-
     public class PorteriaSettings
     {
         /// "Local" | "Nube"
@@ -18,20 +17,25 @@
         /// Minutos de gracia entre pago y salida física (0 = sin gracia)
         public int TiempoGraciaMinutos { get; set; } = 15;
     }
-
     public class ParqueaderoSettings
     {
         /// "Local" | "Nube"
         public string FuenteDatos { get; set; } = "Nube";
         public bool AbrirTodo { get; set; } = false;
         public bool EntregarTiquete { get; set; } = true;
+        /// false = no imprimir tiquete cuando el vehículo tiene convenio mensual activo.
+        /// El convenio se detecta por caché local — no requiere consulta al VPS.
+        public bool ImprimirTiqueteMensualidad { get; set; } = true;
+        /// Minutos que una placa que acaba de SALIR no puede volver a ENTRAR.
+        /// Previene que la cámara de entrada capture un vehículo que aún está saliendo.
+        /// 0 = desactivado. Recomendado: 1-3 minutos según el layout del carril.
+        public int MinutosAntiReingreso { get; set; } = 2;
         public int TimerEntradaSegundos { get; set; } = 2;
         public int TimerSalidaSegundos { get; set; } = 2;
         public bool AbrirSiSinInternet { get; set; } = false;
         /// Minutos de gracia entre pago y salida física (0 = sin gracia)
         public int TiempoGraciaMinutos { get; set; } = 15;
     }
-
     public class ImpresorasSettings
     {
         public string Entrada1 { get; set; } = "";

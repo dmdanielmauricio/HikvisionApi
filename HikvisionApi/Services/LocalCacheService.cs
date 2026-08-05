@@ -27,6 +27,9 @@ namespace HikvisionApi.Services
             ImmutableHashSet<string>.Empty;
         private volatile ImmutableDictionary<string, ConvenioCacheDto> _convenios =
             ImmutableDictionary<string, ConvenioCacheDto>.Empty;
+        // Placas con PagoDía vigente (refresh 60s)
+        private volatile ImmutableHashSet<string> _pagoDia =
+            ImmutableHashSet<string>.Empty;
         private volatile HikvisionApi.Models.ConfiguracionLocal? _configuracion;
 
         public LocalCacheService(
@@ -91,6 +94,11 @@ namespace HikvisionApi.Services
         }
 
         // Fuerza un refresh inmediato — útil después de cambios admin
+        /// Retorna true si la placa tiene Pago Día activo y no vencido.
+        /// O(1) sin red ni BD — leído de caché en memoria.
+        public bool TienePagoDiaVigente(string placa)
+            => _pagoDia.Contains(placa.ToUpper().Trim());
+
         public Task RefreshNowAsync() => RefreshAllAsync();
 
         // ── Refresh interno ───────────────────────────────────────────
@@ -98,6 +106,7 @@ namespace HikvisionApi.Services
         {
             await RefreshRestringidosAsync();
             await RefreshConveniosAsync();
+            await RefreshPagoDiaAsync();
             await RefreshConfiguracionAsync();
             _logger.LogDebug("LocalCacheService: caché refrescado — {R} restringidos, {C} convenios",
                 _restringidos.Count, _convenios.Count);
@@ -156,6 +165,35 @@ namespace HikvisionApi.Services
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "LocalCacheService: no se pudo refrescar convenios — manteniendo caché anterior");
+            }
+        }
+
+        private async Task RefreshPagoDiaAsync()
+        {
+            // EsPagoDia y PagoDiaHasta son campos del VPS (RegistroParqueo),
+            // no del DB local (RegistroLocal). Consultamos el VPS via ParkSkyClient.
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var parkSky = scope.ServiceProvider.GetRequiredService<ParkSkyClient>();
+
+                var raw = await parkSky.GetRawAsync("api/hikvision/placas-pago-dia");
+                using var doc = System.Text.Json.JsonDocument.Parse(raw);
+
+                var placas = doc.RootElement
+                    .GetProperty("placas")
+                    .EnumerateArray()
+                    .Select(p => p.GetString()?.ToUpper().Trim() ?? "")
+                    .Where(p => !string.IsNullOrEmpty(p))
+                    .ToList();
+
+                _pagoDia = placas.ToImmutableHashSet(StringComparer.OrdinalIgnoreCase);
+                _logger.LogDebug("LocalCacheService: {N} placas con PagoDía vigente", _pagoDia.Count);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "LocalCacheService: no se pudo refrescar PagoDía — manteniendo caché anterior");
             }
         }
 

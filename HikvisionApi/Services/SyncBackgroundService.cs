@@ -148,6 +148,35 @@ namespace HikvisionApi.Services
                     }
                     else if (ev.TipoMovimiento == "ENTRADA")
                     {
+                        // ── ANTI-DUPLICADO SYNC ────────────────────────────────────
+                        // Antes de crear registro en VPS, verificar si ya existe otro
+                        // evento ENTRADA para la misma placa que ya fue sincronizado
+                        // recientemente (< 10 min). Esto cubre el escenario:
+                        //   cámara dispara → sync pendiente → operador ingresa manual
+                        //   → sync llega → NO debe crear duplicado en VPS.
+                        var yaSync = await db.EventosLocales
+                            .Where(e => e.Placa == ev.Placa
+                                     && e.TipoMovimiento == "ENTRADA"
+                                     && e.Sincronizado
+                                     && e.Id != ev.Id
+                                     && e.FechaSincronizado.HasValue
+                                     && e.FechaSincronizado.Value > DateTime.Now.AddMinutes(-10))
+                            .Select(e => e.RegistroVpsId)
+                            .FirstOrDefaultAsync();
+
+                        if (yaSync.HasValue)
+                        {
+                            _logger.LogWarning(
+                                "⛔ Anti-dup Sync: {Placa} ya sincronizada recientemente (VpsId={Id}), omitiendo duplicado",
+                                ev.Placa, yaSync.Value);
+                            ev.Sincronizado = true;
+                            ev.FechaSincronizado = DateTime.Now;
+                            ev.RegistroVpsId = yaSync.Value;
+                            await db.SaveChangesAsync();
+                            continue;
+                        }
+                        // ──────────────────────────────────────────────────────────
+
                         var resp = await parkSky.RegistrarIngresoAsync(
                             ev.Placa, ev.Carril, ev.CarrilNombre ?? "",
                             ev.EsMensualidad, ev.ConvenioId,
