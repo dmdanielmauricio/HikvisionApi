@@ -30,6 +30,11 @@
         /// Previene que la cámara de entrada capture un vehículo que aún está saliendo.
         /// 0 = desactivado. Recomendado: 1-3 minutos según el layout del carril.
         public int MinutosAntiReingreso { get; set; } = 2;
+        /// Segundos de bloqueo por carril tras procesar cualquier evento.
+        /// Si el MISMO carril dispara de nuevo en ese lapso (aunque con placa diferente),
+        /// se ignora — atrapa doble trigger aunque el OCR cambie un carácter.
+        /// 0 = desactivado. Recomendado: 3-5 segundos.
+        public int SegundosAntiDupCarril { get; set; } = 4;
         public int TimerEntradaSegundos { get; set; } = 2;
         public int TimerSalidaSegundos { get; set; } = 2;
         public bool AbrirSiSinInternet { get; set; } = false;

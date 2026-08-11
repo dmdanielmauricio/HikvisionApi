@@ -361,11 +361,20 @@ namespace HikvisionApi.Services
             // El tiquete se imprime cuando el VPS confirma el RegistroId.
             // ════════════════════════════════════════════════════════════════
 
-            // 0. ANTI-DUPLICADO ANPR — ventana 5 min en memoria, 0ms
-            //    Previene doble registro por doble trigger de cámara
+            // 0. ANTI-DUPLICADO POR CARRIL — ventana corta en segundos, 0ms
+            //    Ignora cualquier placa del mismo carril si ya procesó recientemente.
+            //    Atrapa doble trigger aunque el OCR confunda un carácter (ABC123 ≠ ABC12).
+            if (EsEventoRecienteEnCarril(lane))
+            {
+                _logger.LogWarning("⛔ Anti-dup carril {Lane}: evento muy reciente, ignorando {Placa}", lane, placa);
+                return;
+            }
+
+            // 0b. ANTI-DUPLICADO POR PLACA — ventana 5 min en memoria, 0ms
+            //     Previene doble registro cuando el mismo vehículo pasa dos veces.
             if (EsIngresoReciente(placa))
             {
-                _logger.LogWarning("⛔ Anti-dup: {Placa} ya procesada recientemente, ignorando", placa);
+                _logger.LogWarning("⛔ Anti-dup placa: {Placa} ya procesada recientemente, ignorando", placa);
                 return;
             }
 
@@ -424,12 +433,46 @@ namespace HikvisionApi.Services
             // 4. Imprimir tiquete INMEDIATAMENTE con datos locales.
             //    Si llegamos aquí: no es PagoDía (0b retornó antes) ni anti-dup.
             //    Solo se omite si es mensualidad y ImprimirTiqueteMensualidad = false.
+            // Imprimir en Task.Run — no bloqueamos el hilo de la cámara.
+            // La barrera ya está abierta; la impresión puede correr en paralelo.
+            // Si el caché dice no-convenio pero AbrirTodo=true, verificar VPS
+            // para no imprimir tiquete a mensualidades con caché desactualizado.
+            bool _esMensualidad = tieneConvenio;
+            if (!tieneConvenio && _parqueadero.AbrirTodo)
+            {
+                try
+                {
+                    var _chk = await _parkSky.GetRawAsync(
+                        $"api/hikvision/es-mensualidad?placa={Uri.EscapeDataString(placa)}");
+                    using var _doc = System.Text.Json.JsonDocument.Parse(_chk);
+                    if (_doc.RootElement.TryGetProperty("esMensualidad", out var _prop)
+                        && _prop.GetBoolean())
+                    {
+                        _esMensualidad = true;
+                        _logger.LogInformation("🔄 Caché desactualizado: {Placa} ES mensualidad (VPS)", placa);
+                        _ = Task.Run(() => _cache.RefreshNowAsync()); // forzar refresh del caché
+                    }
+                }
+                catch { /* VPS no disponible — continuar sin check */ }
+            }
+
             if (_parqueadero.EntregarTiquete && !string.IsNullOrEmpty(impresora)
-                && (!tieneConvenio || _parqueadero.ImprimirTiqueteMensualidad))
-                _print.ImprimirTiqueteLocal(impresora, placa, tipoVehiculo,
-                    horaEntrada, carrilNombre, tieneConvenio,
-                    _cache.GetConfiguracion(),
-                    qrToken: qrTokenLocal);
+                && (!_esMensualidad || _parqueadero.ImprimirTiqueteMensualidad))
+            {
+                var _cfg = _cache.GetConfiguracion();
+                var _tV = tipoVehiculo;
+                var _hE = horaEntrada;
+                var _cN = carrilNombre;
+                var _mens = tieneConvenio;
+                var _imp = impresora;
+                var _qr = qrTokenLocal;
+                var _placa = placa;
+                Task.Run(() =>
+                {
+                    try { _print.ImprimirTiqueteLocal(_imp, _placa, _tV, _hE, _cN, _mens, _cfg, qrToken: _qr); }
+                    catch (Exception ex) { _logger.LogError(ex, "Error impresión {Placa}", _placa); }
+                });
+            }
 
             // 5. Encolar evento (background, scope propio, nunca bloquea)
             EncolarEvento(placa, lane, carrilNombre, "ENTRADA", true,
@@ -691,12 +734,37 @@ namespace HikvisionApi.Services
         private static HttpClient? _barrierClient;
         private static readonly object _barrierClientLock = new();
 
-        // ── ANTI-DUPLICADO CÁMARA ─────────────────────────────────────────
+        // ── ANTI-DUPLICADO POR PLACA ─────────────────────────────────────
         // Ventana de 5 minutos: si la misma placa ya fue procesada, ignorar.
-        // Previene el doble trigger de ANPR (2 eventos en ~100ms mismo paso).
         private static readonly Dictionary<string, DateTime> _ultimoIngreso = new();
         private static readonly object _antiDupLock = new();
         private static readonly TimeSpan _ventanaAntiDup = TimeSpan.FromMinutes(5);
+
+        // ── ANTI-DUPLICADO POR CARRIL ─────────────────────────────────
+        // Ventana corta (segundos): si el MISMO carril procesó cualquier placa
+        // recientemente, ignorar — atrapa doble trigger aunque el OCR confunda letras.
+        // Configurar en appsettings: "Parqueadero:SegundosAntiDupCarril": 4
+        private static readonly Dictionary<string, DateTime> _ultimoEventoCarril = new();
+        private static readonly object _carrilLock = new();
+
+        private bool EsEventoRecienteEnCarril(string lane)
+        {
+            var ventana = TimeSpan.FromSeconds(_parqueadero.SegundosAntiDupCarril);
+            if (ventana <= TimeSpan.Zero) return false;
+            lock (_carrilLock)
+            {
+                if (_ultimoEventoCarril.TryGetValue(lane, out var ts) &&
+                    DateTime.Now - ts < ventana)
+                    return true;
+                _ultimoEventoCarril[lane] = DateTime.Now;
+                // Limpiar entradas viejas
+                var viejas = _ultimoEventoCarril
+                    .Where(k => DateTime.Now - k.Value > ventana * 10)
+                    .Select(k => k.Key).ToList();
+                foreach (var k in viejas) _ultimoEventoCarril.Remove(k);
+                return false;
+            }
+        }
 
         private bool EsIngresoReciente(string placa)
         {
