@@ -138,6 +138,7 @@ namespace HikvisionApi.Services
                 try
                 {
                     bool ok;
+                    bool errorTransporte = false;
                     int? registroVpsId = null;
 
                     if (!ev.Autorizado)
@@ -185,6 +186,7 @@ namespace HikvisionApi.Services
                             ev.QrToken); // token local → VPS lo usa en RegistroParqueo
 
                         ok = resp.Ok;
+                        errorTransporte = resp.ErrorTransporte;
                         registroVpsId = resp.RegistroId;
                     }
                     else // SALIDA autorizada
@@ -193,7 +195,25 @@ namespace HikvisionApi.Services
                             ev.Placa, ev.Carril, ev.ImagenUrl, ev.CarrilNombre);
 
                         ok = resp.Ok;
+                        errorTransporte = resp.ErrorTransporte;
                         registroVpsId = resp.RegistroId;
+                    }
+
+                    // El VPS no contestó (401, 5xx, timeout). Eso NO es un
+                    // rechazo de negocio: dejar el evento pendiente sin gastar
+                    // reintentos. Si contáramos estos fallos, una API Key mal
+                    // configurada o media hora de VPS caído borraría en 25s
+                    // todos los ingresos de esa ventana — sin dejar rastro
+                    // salvo ErrorSincronizacion en la tabla local.
+                    if (errorTransporte)
+                    {
+                        ev.ErrorSincronizacion =
+                            "VPS inalcanzable o rechazó la autenticación — pendiente de reintento";
+                        _logger.LogWarning(
+                            "🔌 Evento {Id} ({Placa} {Tipo}) queda pendiente: no se pudo " +
+                            "contactar al VPS. No se consume reintento.",
+                            ev.Id, ev.Placa, ev.TipoMovimiento);
+                        continue;
                     }
 
                     if (ok)

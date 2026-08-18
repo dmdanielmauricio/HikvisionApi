@@ -26,6 +26,11 @@ namespace HikvisionApi.Models
         public string NombreConvenio { get; set; } = "";
         public DateTime FechaInicio { get; set; }
         public DateTime FechaFin { get; set; }
+        // Días de gracia después de FechaFin durante los cuales el convenio
+        // sigue vigente (el cliente todavía está a tiempo de pagar).
+        // REQUIERE que la BD local tenga la columna DiasProrroga en
+        // ConveniosMensualidad — misma migración que se aplicó en el VPS.
+        public int DiasProrroga { get; set; }
         public bool PagoPendiente { get; set; }
         public virtual ICollection<ConvenioVehiculoLocal> Vehiculos { get; set; }
             = new List<ConvenioVehiculoLocal>();

@@ -89,6 +89,12 @@ namespace HikvisionApi.Services
             await log.WriteLineAsync("");
         }
 
+        // Cron\u00f3metro por captura. AsyncLocal para que cada evento de c\u00e1mara
+        // lleve el suyo sin pasarlo por par\u00e1metro a toda la cadena.
+        private static readonly AsyncLocal<System.Diagnostics.Stopwatch?> _cronAcceso = new();
+
+        private long MsTranscurridos => _cronAcceso.Value?.ElapsedMilliseconds ?? -1;
+
         // =============================================
         // PROCESAR ACCESO \u2014 entrada principal
         // =============================================
@@ -97,6 +103,13 @@ namespace HikvisionApi.Services
             IFormFile? plateImage, IFormFile? fullImage)
         {
             _logger.LogInformation("\ud83d\udcf8 {Placa} carril {Lane} modo {Modo}", placa, lane, _modo);
+
+            // Cron\u00f3metro del ciclo completo c\u00e1mara \u2192 tiquete. Los tiempos
+            // parciales se loguean en los puntos clave (im\u00e1genes, apertura,
+            // impresi\u00f3n) para poder ubicar d\u00f3nde se va el tiempo sin tener
+            // que instrumentar a mano cada vez que alguien reporta lentitud.
+            var _cron = System.Diagnostics.Stopwatch.StartNew();
+            _cronAcceso.Value = _cron;
 
             // \u2500\u2500 FILTRO DE PLACA \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
             // 1. Descartar placas no reconocidas por la c\u00e1mara
@@ -300,12 +313,18 @@ namespace HikvisionApi.Services
             }
 
             // Validar convenio en BD local
+            // Vigente = dentro de FechaFin o de sus días de prórroga.
+            // Misma regla que LocalCacheService.TieneConvenioActivo y que
+            // ConvenioMensualidad.EstaVigente en el VPS.
+            var hoyLocal = DateTime.Today;
             var convenio = await _db.ConveniosVehiculos
                 .Include(cv => cv.ConvenioMensualidad)
                 .FirstOrDefaultAsync(cv =>
                     cv.Placa == placa &&
                     cv.Activo &&
-                    cv.ConvenioMensualidad.FechaFin >= DateTime.Today);
+                    EF.Functions.DateDiffDay(
+                        cv.ConvenioMensualidad.FechaFin, hoyLocal)
+                        <= cv.ConvenioMensualidad.DiasProrroga);
 
             if (convenio != null)
             {
@@ -427,8 +446,12 @@ namespace HikvisionApi.Services
             }
 
             // 3. ABRIR BARRERA — único paso de red en el camino síncrono (~50ms LAN)
+            _logger.LogInformation("\u23f1 [{Ms}ms] {Placa}: validado, abriendo barrera",
+                MsTranscurridos, placa);
+
             await EjecutarApertura(lane, "ENTRADA");
-            _logger.LogInformation("\u2705 Barrera abierta: {Placa} ({Motivo})", placa, motivo);
+            _logger.LogInformation("\u2705 Barrera abierta: {Placa} ({Motivo}) [{Ms}ms]",
+                placa, motivo, MsTranscurridos);
 
             // 4. Imprimir tiquete INMEDIATAMENTE con datos locales.
             //    Si llegamos aquí: no es PagoDía (0b retornó antes) ni anti-dup.
@@ -440,20 +463,13 @@ namespace HikvisionApi.Services
             bool _esMensualidad = tieneConvenio;
             if (!tieneConvenio && _parqueadero.AbrirTodo)
             {
-                try
-                {
-                    var _chk = await _parkSky.GetRawAsync(
-                        $"api/hikvision/es-mensualidad?placa={Uri.EscapeDataString(placa)}");
-                    using var _doc = System.Text.Json.JsonDocument.Parse(_chk);
-                    if (_doc.RootElement.TryGetProperty("esMensualidad", out var _prop)
-                        && _prop.GetBoolean())
-                    {
-                        _esMensualidad = true;
-                        _logger.LogInformation("🔄 Caché desactualizado: {Placa} ES mensualidad (VPS)", placa);
-                        _ = Task.Run(() => _cache.RefreshNowAsync()); // forzar refresh del caché
-                    }
-                }
-                catch { /* VPS no disponible — continuar sin check */ }
+                // Este chequeo tapa el hueco de un caché desactualizado (se
+                // refresca cada 60s), pero NO puede vivir sin límite en el
+                // camino del tiquete: con AbrirTodo=true TODO vehículo casual
+                // pasa por aquí, y es una llamada al VPS por internet cuyo
+                // HttpClient tiene 10s de timeout. Ese era el grueso del
+                // retraso entre la foto y la impresión.
+                _esMensualidad = await EsMensualidadSegunVpsAsync(placa, tieneConvenio);
             }
 
             if (_parqueadero.EntregarTiquete && !string.IsNullOrEmpty(impresora)
@@ -467,9 +483,19 @@ namespace HikvisionApi.Services
                 var _imp = impresora;
                 var _qr = qrTokenLocal;
                 var _placa = placa;
+
+                _logger.LogInformation("⏱ [{Ms}ms] {Placa}: enviando tiquete a impresora",
+                    MsTranscurridos, placa);
+
+                var _cronImp = System.Diagnostics.Stopwatch.StartNew();
                 Task.Run(() =>
                 {
-                    try { _print.ImprimirTiqueteLocal(_imp, _placa, _tV, _hE, _cN, _mens, _cfg, qrToken: _qr); }
+                    try
+                    {
+                        _print.ImprimirTiqueteLocal(_imp, _placa, _tV, _hE, _cN, _mens, _cfg, qrToken: _qr);
+                        _logger.LogInformation("🖨 Tiquete {Placa} impreso en {Ms}ms",
+                            _placa, _cronImp.ElapsedMilliseconds);
+                    }
                     catch (Exception ex) { _logger.LogError(ex, "Error impresión {Placa}", _placa); }
                 });
             }
@@ -477,6 +503,66 @@ namespace HikvisionApi.Services
             // 5. Encolar evento (background, scope propio, nunca bloquea)
             EncolarEvento(placa, lane, carrilNombre, "ENTRADA", true,
                 motivo, tipoVehiculo, tieneConvenio, convenioId, imagenUrlTask, qrTokenLocal);
+        }
+
+        // ════════════════════════════════════════════════════════════════
+        // ¿ES MENSUALIDAD SEGÚN EL VPS? — con presupuesto de tiempo.
+        //
+        // Solo sirve para decidir si se imprime tiquete, así que nunca debe
+        // costar más que ese beneficio. Si el VPS no contesta dentro del
+        // presupuesto se responde con lo que dice el caché local y se dispara
+        // un refresh en background; la consulta sigue viva pero ya no se
+        // espera. Peor caso para el cliente: un tiquete de más que no debía
+        // imprimirse, en vez de quedarse esperando en la talanquera.
+        // ════════════════════════════════════════════════════════════════
+        private const int MsChequeoMensualidad = 1500;
+
+        private async Task<bool> EsMensualidadSegunVpsAsync(
+            string placa, bool valorPorDefecto)
+        {
+            var consulta = _parkSky.GetRawAsync(
+                $"api/hikvision/es-mensualidad?placa={Uri.EscapeDataString(placa)}");
+
+            var ganador = await Task.WhenAny(
+                consulta, Task.Delay(MsChequeoMensualidad));
+
+            if (ganador != consulta)
+            {
+                // Observar la excepción de la consulta que quedó corriendo,
+                // para que no termine como UnobservedTaskException.
+                _ = consulta.ContinueWith(
+                    t => { _ = t.Exception; },
+                    TaskContinuationOptions.OnlyOnFaulted);
+
+                _logger.LogWarning(
+                    "⏱ es-mensualidad {Placa}: el VPS no respondió en {Ms}ms — " +
+                    "se imprime según caché y se refresca en background",
+                    placa, MsChequeoMensualidad);
+
+                _ = Task.Run(() => _cache.RefreshNowAsync());
+                return valorPorDefecto;
+            }
+
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(await consulta);
+                if (doc.RootElement.TryGetProperty("esMensualidad", out var prop)
+                    && prop.GetBoolean())
+                {
+                    _logger.LogInformation(
+                        "🔄 Caché desactualizado: {Placa} ES mensualidad (VPS)", placa);
+                    _ = Task.Run(() => _cache.RefreshNowAsync());
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "es-mensualidad {Placa}: sin respuesta útil del VPS — se usa el caché",
+                    placa);
+            }
+
+            return valorPorDefecto;
         }
 
         // ════════════════════════════════════════════════════════════════

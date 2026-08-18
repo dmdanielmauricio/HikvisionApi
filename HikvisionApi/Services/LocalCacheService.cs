@@ -81,10 +81,15 @@ namespace HikvisionApi.Services
 
         // Devuelve true si la placa tiene convenio vigente hoy.
         // Si true, rellena convenioId con el id del convenio.
+        //
+        // Vigente incluye el tiempo de prórroga: el convenio sigue operando
+        // hasta FechaFin + DiasProrroga. Misma regla que aplica el VPS en
+        // ConvenioMensualidad.EstaVigente — si estas dos se desincronizan,
+        // la talanquera y el registro del VPS dejan de coincidir.
         public bool TieneConvenioActivo(string placa, out int? convenioId)
         {
             if (_convenios.TryGetValue(placa.ToUpper().Trim(), out var c)
-                && c.FechaFin >= DateTime.Today)
+                && c.FechaLimite >= DateTime.Today)
             {
                 convenioId = c.ConvenioId;
                 return true;
@@ -92,6 +97,13 @@ namespace HikvisionApi.Services
             convenioId = null;
             return false;
         }
+
+        // True si la placa está vigente pero ya pasó su FechaFin — es decir,
+        // está corriendo los días de prórroga para pagar.
+        public bool EstaEnProrroga(string placa)
+            => _convenios.TryGetValue(placa.ToUpper().Trim(), out var c)
+               && c.FechaFin < DateTime.Today
+               && c.FechaLimite >= DateTime.Today;
 
         // Fuerza un refresh inmediato — útil después de cambios admin
         /// Retorna true si la placa tiene Pago Día activo y no vencido.
@@ -141,23 +153,31 @@ namespace HikvisionApi.Services
                 var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
                 var hoy = DateTime.Today;
 
+                // Incluye los convenios en prórroga: DateDiffDay(FechaFin, hoy)
+                // <= DiasProrroga cubre a la vez la vigencia normal (diferencia
+                // negativa) y los días de gracia posteriores a FechaFin.
                 var convenios = await db.ConveniosVehiculos
                     .Include(cv => cv.ConvenioMensualidad)
-                    .Where(cv => cv.Activo && cv.ConvenioMensualidad.FechaFin >= hoy)
+                    .Where(cv => cv.Activo &&
+                        EF.Functions.DateDiffDay(
+                            cv.ConvenioMensualidad.FechaFin, hoy)
+                            <= cv.ConvenioMensualidad.DiasProrroga)
                     .Select(cv => new ConvenioCacheDto
                     {
                         Placa = cv.Placa.ToUpper().Trim(),
                         ConvenioId = cv.ConvenioMensualidadId,
-                        FechaFin = cv.ConvenioMensualidad.FechaFin
+                        FechaFin = cv.ConvenioMensualidad.FechaFin,
+                        DiasProrroga = cv.ConvenioMensualidad.DiasProrroga
                     })
                     .ToListAsync();
 
-                // En caso de placas duplicadas, tomar el convenio con FechaFin más lejana
+                // En caso de placas duplicadas, tomar el convenio que cubra hasta
+                // más lejos — contando la prórroga, no solo FechaFin.
                 var dic = convenios
                     .GroupBy(c => c.Placa, StringComparer.OrdinalIgnoreCase)
                     .ToImmutableDictionary(
                         g => g.Key,
-                        g => g.OrderByDescending(c => c.FechaFin).First(),
+                        g => g.OrderByDescending(c => c.FechaLimite).First(),
                         StringComparer.OrdinalIgnoreCase);
 
                 _convenios = dic;
@@ -220,5 +240,9 @@ namespace HikvisionApi.Services
         public string Placa { get; set; } = "";
         public int? ConvenioId { get; set; }
         public DateTime FechaFin { get; set; }
+        public int DiasProrroga { get; set; }
+
+        /// Último día en que el convenio sigue operando (fin + prórroga).
+        public DateTime FechaLimite => FechaFin.Date.AddDays(DiasProrroga);
     }
 }

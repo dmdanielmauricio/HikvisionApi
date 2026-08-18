@@ -78,12 +78,23 @@ namespace HikvisionApi.Services
                     new StringContent(body, Encoding.UTF8, "application/json"));
                 var json = await r.Content.ReadAsStringAsync();
                 _logger.LogInformation("ProcesarEntrada {Placa}: {Json}", placa, json);
+
+                // Un 401/500 NO es "el VPS rechazó el vehículo" — es que no
+                // llegamos a preguntárselo. Hay que distinguirlo para no
+                // quemar los reintentos y perder el registro (ver
+                // SyncBackgroundService).
+                if (!r.IsSuccessStatusCode)
+                {
+                    LogFalloHttp("procesar-entrada", placa, r.StatusCode, json);
+                    return new IngresoResponse { Ok = false, ErrorTransporte = true };
+                }
+
                 return Deserializar<IngresoResponse>(json) ?? new IngresoResponse();
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error registrando ingreso {Placa}", placa);
-                return new IngresoResponse { Ok = false };
+                return new IngresoResponse { Ok = false, ErrorTransporte = true };
             }
         }
 
@@ -108,12 +119,29 @@ namespace HikvisionApi.Services
                     new StringContent(body, Encoding.UTF8, "application/json"));
                 var json = await r.Content.ReadAsStringAsync();
                 _logger.LogInformation("ProcesarSalida {Placa}: {Json}", placa, json);
+
+                if (!r.IsSuccessStatusCode)
+                {
+                    LogFalloHttp("procesar-salida", placa, r.StatusCode, json);
+                    return new SalidaResponse
+                    {
+                        Ok = false,
+                        Autorizado = false,
+                        ErrorTransporte = true
+                    };
+                }
+
                 return Deserializar<SalidaResponse>(json) ?? new SalidaResponse();
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error validando salida {Placa}", placa);
-                return new SalidaResponse { Ok = false, Autorizado = false };
+                return new SalidaResponse
+                {
+                    Ok = false,
+                    Autorizado = false,
+                    ErrorTransporte = true
+                };
             }
         }
 
@@ -209,6 +237,31 @@ namespace HikvisionApi.Services
             }
         }
 
+        // Un 401 aquí significa que la X-Api-Key local no coincide con la del
+        // VPS. Sin este aviso explícito el síntoma es mudo: la talanquera deja
+        // de abrir y los eventos se acumulan sin causa visible en el log.
+        private void LogFalloHttp(
+            string endpoint, string placa,
+            System.Net.HttpStatusCode status, string cuerpo)
+        {
+            if (status == System.Net.HttpStatusCode.Unauthorized
+                || status == System.Net.HttpStatusCode.Forbidden)
+            {
+                _logger.LogError(
+                    "🔑 {Endpoint} {Placa}: el VPS respondió {Status} — la API Key " +
+                    "de ParkSkySettings:ApiKey no coincide con la que espera {Url}. " +
+                    "Revise que no haya una variable de entorno pisando la " +
+                    "configuración en ninguno de los dos lados.",
+                    endpoint, placa, (int)status, _settings.ApiUrl);
+            }
+            else
+            {
+                _logger.LogWarning(
+                    "⚠️ {Endpoint} {Placa}: el VPS respondió {Status} — {Cuerpo}",
+                    endpoint, placa, (int)status, cuerpo);
+            }
+        }
+
         private static T? Deserializar<T>(string json)
         {
             try
@@ -244,6 +297,10 @@ namespace HikvisionApi.Services
         public string? Motivo { get; set; }
         public string? Mensaje { get; set; }
         public string? QrToken { get; set; }
+
+        /// True si la llamada no llegó a completarse (401, 5xx, timeout, red).
+        /// No es una decisión de negocio del VPS — el evento debe reintentarse.
+        public bool ErrorTransporte { get; set; }
     }
 
     public class SalidaResponse
@@ -254,6 +311,9 @@ namespace HikvisionApi.Services
         public string? Mensaje { get; set; }
         public int? RegistroId { get; set; }
         public string? Entrada { get; set; }
+
+        /// Ver IngresoResponse.ErrorTransporte.
+        public bool ErrorTransporte { get; set; }
     }
 
     public class TicketResponse
